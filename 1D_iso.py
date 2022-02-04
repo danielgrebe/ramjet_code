@@ -148,51 +148,28 @@ rho_cond[0] = rho0_cond
 for i in range(len(x_cond)-1):
 	dA = A_cond[i+1] - A_cond[i]
 	# print(dA)
-	dp1 = -1  # initial guess at dp
 	q = 0
-	j = 0
-	while True:
-		# construct matrix
-		A = np.array([[rho_cond[i] * A_cond[i], u_cond[i] * A_cond[i], 0, 0],
-					  [m_dot * u_cond[i], 0, 0, m_dot * C_p], 
-					  [m_dot, 0, A_cond[i], 0], 
-					  [0, T_cond[i]/(p_cond[i] + dp1), 
-							-(rho_cond[i] * T_cond[i] / (p_cond[i] * 
-								(p_cond[i] + dp1))),
-							rho_cond[i] / (p_cond[i] + dp1)]])
-		# b = np.array([-rho_cond[i] * u_cond[i] * dA, q, -p_cond[i]*dA, 0])
-		b = np.array([-rho_cond[i] * u_cond[i] * dA, q, 0, 0])
+	# construct matrix
+	A = np.array([[rho_cond[i]*u_cond[i], R*T_cond[i], rho_cond[i]*R],
+				  [rho_cond[i]*A_cond[i], u_cond[i]*A_cond[i], 0], 
+				  [u_cond[i], 0, C_p]])
+	# b = np.array([-rho_cond[i] * u_cond[i] * dA, q, -p_cond[i]*dA, 0])
+	b = np.array([0, -rho_cond[i] * u_cond[i] * dA, q])
 
-		# solve matrix
-		# (du, drho, dp, dT), null, null, null = np.linalg.lstsq(A, b) 
-		du, drho, dp, dT = np.linalg.solve(A, b) 
-		# out = np.linalg.solve(A, b) 
-		# print(out.shape)
-		# print(du)
+	# solve matrix
+	# (du, drho, dp, dT), null, null, null = np.linalg.lstsq(A, b) 
+	du, drho, dT = np.linalg.solve(A, b) 
+	# out = np.linalg.solve(A, b) 
+	# print(out.shape)
+	# print(du)
 
-		# calculate eps
-		if dp != 0:
-			eps = np.abs((dp1 - dp)/dp)
-		else:
-			eps = np.abs(dp1 - dp)
-		if eps < EPS_MAX: 
-			u_cond[i+1] = du + u_cond[i]
-			p_cond[i+1] = dp + p_cond[i]
-			T_cond[i+1] = dT + T_cond[i]
-			rho_cond[i+1] = drho + rho_cond[i]
-			# print(j)
-			break
-		if j >= MAX_ITER:
-			warnings.warn("La convergence n'a pas été atteint avant le nombre"
-			+ "d'iterations maximal", RuntimeWarning)
-			u_cond[i+1] = du + u_cond[i]
-			p_cond[i+1] = dp + p_cond[i]
-			T_cond[i+1] = dT + T_cond[i]
-			rho_cond[i+1] = drho + rho_cond[i]
-			break
-		dp1 = RELAX * dp + (1 - RELAX) * dp1
-		# print(j)
-		j = j + 1
+	u_cond[i+1] = du + u_cond[i]
+	# p_cond[i+1] = dp + p_cond[i]
+	T_cond[i+1] = dT + T_cond[i]
+	rho_cond[i+1] = drho + rho_cond[i]
+
+# Calculate pressure:
+p_cond = rho_cond*R*T_cond
 
 # conservation checks
 print(rho_cond[0]*u_cond[0]*A_cond[0] - rho_cond[-1]*u_cond[-1]*A_cond[-1])
@@ -201,13 +178,14 @@ print(u_cond[0] * m_dot - u_cond[-1] * m_dot
 	+ sum(p_cond[1:] * (A_cond[1:]-A_cond[:-1])) 
 	+ p_cond[0]*A_cond[0] 
 	- p_cond[-1]*A_cond[-1])
+print(C_v*np.log(T_cond[-1]/T_cond[0]) - R*np.log(rho_cond[-1]/rho_cond[0]))
 #print(sum(A_cond[1:]-A_cond[:-1]) - A_cond[-1]+A_cond[0])
-print(rho_cond[0]*u_cond[0]*A_cond[0] - rho_cond[1]*u_cond[1]*A_cond[1])
-print(C_p*T_cond[0] + u_cond[0]**2/2 - C_p*T_cond[1] - u_cond[1]**2/2)
-print(u_cond[0] * m_dot - u_cond[1] * m_dot 
-	+ p_cond[1] * (A_cond[1]-A_cond[0]) 
-	+ p_cond[0]*A_cond[0] 
-	- p_cond[1]*A_cond[1])
+# print(rho_cond[0]*u_cond[0]*A_cond[0] - rho_cond[1]*u_cond[1]*A_cond[1])
+# print(C_p*T_cond[0] + u_cond[0]**2/2 - C_p*T_cond[1] - u_cond[1]**2/2)
+# print(u_cond[0] * m_dot - u_cond[1] * m_dot 
+# 	+ p_cond[1] * (A_cond[1]-A_cond[0]) 
+# 	+ p_cond[0]*A_cond[0] 
+# 	- p_cond[1]*A_cond[1])
 	
 
 
