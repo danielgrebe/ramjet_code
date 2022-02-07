@@ -8,13 +8,14 @@ import matplotlib.pyplot as plt
 import warnings
 
 # Propriétés du gaz
-CO2 = 0.1  # fraction massique du CO_2
+CO2 = 0.0  # fraction massique du CO_2
 MASSE_MOLAIRE = 2*14.5e-3  # kg/mol
 IDEAL_GAS = 8.314  # J/(K*mol)
-R = IDEAL_GAS / MASSE_MOLAIRE
+#R = IDEAL_GAS / MASSE_MOLAIRE
 GAMMA = 1.4
-C_p = 1.006  # J/(kg*K)
+C_p = 1.006e3  # J/(kg*K)
 C_v = C_p / GAMMA  # J/(kg*K)
+R = C_p -C_v
 H_s = CO2 * 591e3  # J/kg enthalpy of sublimation du mélange
 
 # Conditions initials
@@ -33,6 +34,11 @@ A_star = H_star * NOZZLE_DEPTH
 A_Astar = interp1d(X_points, H_points/H_star)  # ratio
 x_pre_col = interp1d(H_points[:2]/H_star, X_points[:2])
 x_post_col = interp1d(H_points[1:]/H_star, X_points[1:])
+
+# Paramètres condensation
+COND_LEN = 0.05  # m: longueur sur lequel tout le CO2 condense
+dqdx = H_s / COND_LEN  # J/(kg*m)
+
 def x_A_Astar(A_Astar, Ma):
 	if Ma < 1:
 		return x_pre_col(A_Astar)
@@ -166,7 +172,10 @@ rho_cond[0] = rho0_cond
 
 # Solve écoulement
 for i in range(len(x_cond)-1):
-	q = 0
+	if (x_cond[i]-x_cond[0]) < COND_LEN:
+		q = dqdx * (x_cond[i+1]-x_cond[i])
+	else:
+		q = 0
 	T_stag_cond[i+1] = q/C_p + T_stag_cond[i]
 	Ma_cond[i+1] = Ma_cond[i] + dM_heat(Ma_cond[i], 
 		(A_cond[i+1]-A_cond[i])/A_cond[i], 0, T_cond[i])
@@ -191,23 +200,9 @@ print(u_cond[0] * m_dot - u_cond[-1] * m_dot
 	- p_cond[-1]*A_cond[-1])
 print("entropy (J/kgK)")
 print(C_v*np.log(T_cond[-1]/T_cond[0]) - R*np.log(rho_cond[-1]/rho_cond[0]))
-#print(sum(A_cond[1:]-A_cond[:-1]) - A_cond[-1]+A_cond[0])
-# print(rho_cond[0]*u_cond[0]*A_cond[0] - rho_cond[1]*u_cond[1]*A_cond[1])
-# print(C_p*T_cond[0] + u_cond[0]**2/2 - C_p*T_cond[1] - u_cond[1]**2/2)
-# print(u_cond[0] * m_dot - u_cond[1] * m_dot 
-# 	+ p_cond[1] * (A_cond[1]-A_cond[0]) 
-# 	+ p_cond[0]*A_cond[0] 
-# 	- p_cond[1]*A_cond[1])
 	
 
 
-# Plotting
-# fig = go.Figure()
-# fig.add_trace(go.Scatter(x=X,
-# 						 y=P_0/p_ratio_Ma(Ma_lin),
-# 						 mode='lines',
-# 						 name='Pression (Pa)'))
-# fig.show()
 fig, ((ax0, ax1), (ax2, ax3)) = plt.subplots(2,2)
 ax0.plot(X, P_0/p_ratio_Ma(Ma_lin))
 ax0.plot(x_cond, p_cond)
