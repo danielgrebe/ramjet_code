@@ -12,9 +12,9 @@ CO2 = 0.1  # fraction massique du CO_2
 MASSE_MOLAIRE = 2*14.5e-3  # kg/mol
 IDEAL_GAS = 8.314  # J/(K*mol)
 R = IDEAL_GAS / MASSE_MOLAIRE
-gamma = 1.4
+GAMMA = 1.4
 C_p = 1.006  # J/(kg*K)
-C_v = C_p / gamma  # J/(kg*K)
+C_v = C_p / GAMMA  # J/(kg*K)
 H_s = CO2 * 591e3  # J/kg enthalpy of sublimation du mélange
 
 # Conditions initials
@@ -50,8 +50,8 @@ RELAX = 1
 
 def area_ratio_Ma(Ma):
 	"""Ratio A/A* en fonction du nombre de Mach"""
-	return 1 / Ma * ((1 + (gamma - 1) / 2 * Ma ** 2 ) / 
-		( (gamma + 1) / 2 )) ** ((gamma + 1) / (2 * (gamma - 1)))
+	return 1 / Ma * ((1 + (GAMMA - 1) / 2 * Ma ** 2 ) / 
+		( (GAMMA + 1) / 2 )) ** ((GAMMA + 1) / (2 * (GAMMA - 1)))
 
 def T_ratio_Ma(Ma):
 	"""Ratio T_0/T en fonction du nombre de Mach
@@ -59,7 +59,7 @@ def T_ratio_Ma(Ma):
 	Hypothèses:
 	 - gaz parfait
 	"""
-	return 1 + (gamma - 1) / 2 * Ma ** 2
+	return 1 + (GAMMA - 1) / 2 * Ma ** 2
 
 def p_ratio_Ma(Ma):
 	"""Ratio p_0/p en fonction du nombre de Mach
@@ -68,7 +68,7 @@ def p_ratio_Ma(Ma):
 	 - isentropique
 	 - gaz parfait
 	"""
-	return T_ratio_Ma(Ma) ** (gamma / (gamma - 1))
+	return T_ratio_Ma(Ma) ** (GAMMA / (GAMMA - 1))
 
 def rho_ratio_Ma(Ma):
 	"""Ratio rho_0/rho en fonction du nombre de Mach
@@ -77,7 +77,16 @@ def rho_ratio_Ma(Ma):
 	 - isentropique
 	 - gaz parfait
 	"""
-	return T_ratio_Ma(Ma) ** (1 / (gamma - 1))
+	return T_ratio_Ma(Ma) ** (1 / (GAMMA - 1))
+
+def rho_ratio_T(T, T0):
+	"""Ratio rho_0/rho en fonction du nombre de Mach
+
+	Hypothèses:
+	 - isentropique
+	 - gaz parfait
+	"""
+	return (T0/T) ** (1 / (GAMMA - 1))
 
 def speed_of_sound_Ma(Ma):
 	"""Vitesse du son en fonction du nombre de mach
@@ -85,7 +94,7 @@ def speed_of_sound_Ma(Ma):
 	Hypothèses:
 	 - gaz parfait
 	"""
-	return np.sqrt(gamma * R * T_0 / T_ratio_Ma(Ma))
+	return np.sqrt(GAMMA * R * T_0 / T_ratio_Ma(Ma))
 
 def speed_of_sound_T(T):
 	"""Vitesse du son en fonction de la temperature (K)
@@ -93,10 +102,15 @@ def speed_of_sound_T(T):
 	Hypothèses:
 	 - gaz parfait
 	"""
-	return np.sqrt(gamma * R * T)
+	return np.sqrt(GAMMA * R * T)
 
 def x_Ma(Ma):
 	return x_A_Astar(area_ratio_Ma(Ma), Ma)
+
+def dM_heat(M, dA_A, q, T, cp=C_p, gamma=GAMMA):
+	return M * (1 + (gamma - 1) / 2 * M ** 2) / (M ** 2 - 1) * (
+		dA_A - (gamma * M ** 2 + 1) * q / cp / T / (
+		2 * (1 + (gamma - 1) / 2 * M ** 2)))
 
 func = lambda mach: area_ratio_Ma(mach) - H_points[-1]/H_star
 Ma_max = fsolve(func, 3)
@@ -110,7 +124,7 @@ X = np.array([x_Ma(Ma) for Ma in Ma_lin])
 # print(P_0/p_ratio_Ma(Ma_lin))
 
 # Mass flow, choked flow
-m_dot = P_0/p_ratio_Ma(1)*np.sqrt(gamma / (R * T_0/T_ratio_Ma(1))) * A_star
+m_dot = P_0/p_ratio_Ma(1)*np.sqrt(GAMMA / (R * T_0/T_ratio_Ma(1))) * A_star
 print(m_dot)
 
 # Déterminer début de la condensation
@@ -132,6 +146,9 @@ print(rho0_cond)
 x_cond = np.arange(x0_cond, X_points[-1], dx)
 A_cond = A_star * A_Astar(x_cond)
 
+Ma_cond = np.zeros(x_cond.shape)
+Ma_cond[0] = Ma0_cond
+
 u_cond = np.zeros(x_cond.shape)
 u_cond[0] = u0_cond
 
@@ -141,32 +158,23 @@ p_cond[0] = p0_cond
 T_cond = np.zeros(x_cond.shape)
 T_cond[0] = T0_cond
 
+T_stag_cond = np.zeros(x_cond.shape)
+T_stag_cond[0] = T_0
+
 rho_cond = np.zeros(x_cond.shape)
 rho_cond[0] = rho0_cond
 
 # Solve écoulement
 for i in range(len(x_cond)-1):
-	dA = A_cond[i+1] - A_cond[i]
-	# print(dA)
 	q = 0
-	# construct matrix
-	A = np.array([[rho_cond[i]*u_cond[i], R*T_cond[i], rho_cond[i]*R],
-				  [rho_cond[i]*A_cond[i], u_cond[i]*A_cond[i], 0], 
-				  [u_cond[i], 0, C_p]])
-	# b = np.array([-rho_cond[i] * u_cond[i] * dA, q, -p_cond[i]*dA, 0])
-	b = np.array([0, -rho_cond[i] * u_cond[i] * dA, q])
+	T_stag_cond[i+1] = q/C_p + T_stag_cond[i]
+	Ma_cond[i+1] = Ma_cond[i] + dM_heat(Ma_cond[i], 
+		(A_cond[i+1]-A_cond[i])/A_cond[i], 0, T_cond[i])
+	T_cond[i+1] = T_stag_cond[i+1] / T_ratio_Ma(Ma_cond[i + 1])
 
-	# solve matrix
-	# (du, drho, dp, dT), null, null, null = np.linalg.lstsq(A, b) 
-	du, drho, dT = np.linalg.solve(A, b) 
-	# out = np.linalg.solve(A, b) 
-	# print(out.shape)
-	# print(du)
-
-	u_cond[i+1] = du + u_cond[i]
+	u_cond[i+1] = Ma_cond[i+1] * speed_of_sound_T(T_cond[i+1])
 	# p_cond[i+1] = dp + p_cond[i]
-	T_cond[i+1] = dT + T_cond[i]
-	rho_cond[i+1] = drho + rho_cond[i]
+	rho_cond[i+1] = rho_0 / rho_ratio_T(T_cond[i+1], T_stag_cond[i+1])
 
 # Calculate pressure:
 p_cond = rho_cond*R*T_cond
