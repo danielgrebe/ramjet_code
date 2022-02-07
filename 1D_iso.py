@@ -42,7 +42,7 @@ def x_A_Astar(A_Astar, Ma):
 		return X_star
 
 # Discrétisation
-n = int(1e4)
+n = int(1e5)
 dx = (X_points[-1] - X_points[0]) / n
 EPS_MAX = 1e-15  # convergence condition for pressure residual
 MAX_ITER = 10
@@ -172,12 +172,16 @@ for i in range(len(x_cond)-1):
 p_cond = rho_cond*R*T_cond
 
 # conservation checks
+print("Masse (kg/s)")
 print(rho_cond[0]*u_cond[0]*A_cond[0] - rho_cond[-1]*u_cond[-1]*A_cond[-1])
+print("Energy (J/kg)")
 print(C_p*T_cond[0] + u_cond[0]**2/2 - C_p*T_cond[-1] - u_cond[-1]**2/2)
+print("Momentum (N)")
 print(u_cond[0] * m_dot - u_cond[-1] * m_dot 
 	+ sum(p_cond[1:] * (A_cond[1:]-A_cond[:-1])) 
 	+ p_cond[0]*A_cond[0] 
 	- p_cond[-1]*A_cond[-1])
+print("entropy (J/kgK)")
 print(C_v*np.log(T_cond[-1]/T_cond[0]) - R*np.log(rho_cond[-1]/rho_cond[0]))
 #print(sum(A_cond[1:]-A_cond[:-1]) - A_cond[-1]+A_cond[0])
 # print(rho_cond[0]*u_cond[0]*A_cond[0] - rho_cond[1]*u_cond[1]*A_cond[1])
