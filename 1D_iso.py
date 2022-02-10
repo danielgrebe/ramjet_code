@@ -7,6 +7,8 @@ from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 import warnings
 
+DATA_BASENAME = "data/tanimura_2015_run4"
+
 # Propriétés du gaz
 CO2 = 0.1  # fraction massique du CO_2
 MASSE_MOLAIRE = 2*14.5e-3  # kg/mol
@@ -19,28 +21,40 @@ R = C_p -C_v
 H_s = CO2 * 591e3  # J/kg enthalpy of sublimation du mélange
 
 # Conditions initials
-P_0 = 2e5  # Pa
-T_0 = 300  # K
+P_0 = 2.026e5  # Pa
+T_0 = 288.2  # K
 u_0 = 0  # m/s
 rho_0 = P_0 / (R * T_0)
 
 # Géométrie
-H_star = 0.005  # m
-X_star = 0.05
+points = np.genfromtxt(DATA_BASENAME+".geo.csv", skip_header=1).transpose()
+X_points = points[0]/100
+H_points = points[1]/100
+X_star = 0.0
+star_pos = int(np.where(X_points==X_star)[0])
+H_star = float(H_points[star_pos])
+print(H_star)
 # Uncomment following lines for Rayleigh flow
 # X_points = np.array([0, X_star, 0.17, 0.23])  # m
 # H_points = np.array([0.05, H_star, 0.024, 0.024])  # m
-X_points = np.array([0, X_star, 0.17])  # m
-H_points = np.array([0.05, H_star, 0.024])  # m
+# X_points = np.array([0, X_star, 0.17])  # m
+# H_points = np.array([0.05, H_star, 0.024])  # m
 NOZZLE_DEPTH = 0.01  # m
 A_star = H_star * NOZZLE_DEPTH
 A_Astar = interp1d(X_points, H_points/H_star)  # ratio
-x_pre_col = interp1d(H_points[:2]/H_star, X_points[:2])
-x_post_col = interp1d(H_points[1:]/H_star, X_points[1:])
+x_pre_col = interp1d(H_points[:star_pos + 1]/H_star, X_points[:star_pos + 1])
+x_post_col = interp1d(H_points[star_pos:]/H_star, X_points[star_pos:])
 
 # Paramètres condensation
 COND_LEN = 0.05  # m: longueur sur lequel tout le CO2 condense
 dqdx = H_s / COND_LEN  # J/(kg*m)
+
+# Données de chaleur latente
+q_points = np.genfromtxt(DATA_BASENAME+".q.csv").transpose()
+print(q_points)
+X_q = np.concatenate(([X_points[0]], q_points[0]/100, [X_points[-1]]))
+Y_q = np.concatenate((np.array([0]), q_points[1], [q_points[1,-1]]))*1000
+q_func = interp1d(X_q, Y_q)
 
 def x_A_Astar(A_Astar, Ma):
 	if Ma < 1:
@@ -130,10 +144,12 @@ def drho_heat(M, dA_A, q, T, rho, cp=C_p, gamma=GAMMA):
 	return rho * (dA_A * M ** 2 / (1 - M**2) - q / cp / T / (1 - M ** 2))
 
 func = lambda mach: area_ratio_Ma(mach) - H_points[-1]/H_star
-Ma_max = fsolve(func, 3)
+Ma_max = fsolve(func, 2)
 func1 = lambda mach: area_ratio_Ma(mach) - H_points[0]/H_star
 Ma_min = fsolve(func1, 0.1)
-Ma_lin = np.linspace(Ma_min, Ma_max, n)
+print(Ma_max)
+print(Ma_min)
+Ma_lin = np.linspace(Ma_min+0.001, Ma_max-0.001, n)
 X = np.array([x_Ma(Ma) for Ma in Ma_lin])
 
 # Mass flow, choked flow
@@ -164,6 +180,7 @@ print("densité:")
 print(rho0_cond)
 
 # Discrétisation de la condensation
+print(X_points[-1], dx, x0_cond)
 x_cond = np.arange(x0_cond, X_points[-1], dx)
 A_cond = A_star * A_Astar(x_cond)
 
@@ -187,10 +204,11 @@ rho_cond[0] = rho0_cond
 
 # Solve écoulement
 for i in range(len(x_cond)-1):
-	if (x_cond[i]-x_cond[0]) < COND_LEN:
-		q = dqdx * (x_cond[i+1]-x_cond[i])
-	else:
-		q = 0
+	# if (x_cond[i]-x_cond[0]) < COND_LEN:
+	# 	q = dqdx * (x_cond[i+1]-x_cond[i])
+	# else:
+	# 	q = 0
+	q = q_func(x_cond[i+1]) - q_func(x_cond[i])
 	# T_stag_cond[i+1] = q/C_p + T_stag_cond[i]
 	Ma_cond[i+1] = np.sqrt(Ma_cond[i]**2 + dM2_heat(Ma_cond[i], 
 		(A_cond[i+1]-A_cond[i])/A_cond[i], q, T_cond[i]))
