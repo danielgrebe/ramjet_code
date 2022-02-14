@@ -10,11 +10,11 @@ import warnings
 DATA_BASENAME = "data/tanimura_2015_run4"
 
 # Propriétés du gaz
-CO2 = 0.1  # fraction massique du CO_2
+CO2 = 0.212  # fraction massique du CO_2
 MASSE_MOLAIRE = 2*14.5e-3  # kg/mol
 IDEAL_GAS = 8.314  # J/(K*mol)
 #R = IDEAL_GAS / MASSE_MOLAIRE
-GAMMA = 1.4
+GAMMA = (1-CO2)*1.4 + CO2*1.289
 C_p = 1.006e3  # J/(kg*K)
 C_v = C_p / GAMMA  # J/(kg*K)
 R = C_p -C_v
@@ -65,7 +65,7 @@ def x_A_Astar(A_Astar, Ma):
 		return X_star
 
 # Discrétisation
-n = int(1e5)
+n = int(1e4)
 dx = (X_points[-1] - X_points[0]) / n
 # EPS_MAX = 1e-15  # convergence condition for pressure residual
 # MAX_ITER = 10
@@ -156,7 +156,7 @@ X = np.array([x_Ma(Ma) for Ma in Ma_lin])
 m_dot = P_0/p_ratio_Ma(1)*np.sqrt(GAMMA / (R * T_0/T_ratio_Ma(1))) * A_star
 
 # Déterminer début de la condensation
-Ma0_cond = 2  # nombre de Mach ou la condensation début.
+Ma0_cond = 1.001  # nombre de Mach ou la condensation début.
 
 # position et conditions au début de la condensation
 x0_cond = x_Ma(Ma0_cond)
@@ -181,7 +181,7 @@ print(rho0_cond)
 
 # Discrétisation de la condensation
 print(X_points[-1], dx, x0_cond)
-x_cond = np.arange(x0_cond, X_points[-1], dx)
+x_cond = np.arange(x0_cond, q_points[0,-1]/100, dx)
 A_cond = A_star * A_Astar(x_cond)
 
 Ma_cond = np.zeros(x_cond.shape)
@@ -271,8 +271,21 @@ ax3.plot(x_cond, u_cond)
 ax3.set_xlabel('x (m)')
 ax3.set_ylabel('u (m/s)')
 # plt.figure()
-# plt.plot(x_cond, A_cond)
-# plt.plot(X, A_star * A_Astar(X))
+# plt.plot(x_cond, q_func(x_cond))
+
+f = plt.figure()
+ax = f.add_subplot(111)
+ax.yaxis.tick_right()
+ax.yaxis.set_label_position("right")
+im = plt.imread(DATA_BASENAME + ".PT.png")
+implot = ax.imshow(im, origin="upper", extent=(0,12,100,240), aspect='auto')
+ax.plot(X*100, T_0/T_ratio_Ma(Ma_lin))
+ax.plot(x_cond*100, T_cond)
+ax.set_xlim([0,12])
+ax.set_ylim([100,240])
+
+
+
 plt.show()
 
 
