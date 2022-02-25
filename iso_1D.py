@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import warnings
 from collections.abc import Iterable
 
-DATA_BASENAME = "data/test_nucleation_tuto"
+DATA_BASENAME = "data/tanimura_2015_run4"
 
 # Conditions initials
 P_0 = 2.026e5  # Pa
@@ -472,36 +472,36 @@ def main():
     # -----------------------------------------------------------------------------
     #                               PLOTTING
     # -----------------------------------------------------------------------------
-    # fig, ((ax0, ax1), (ax2, ax3)) = plt.subplots(2, 2)
-    # X_iso = np.linspace(geo.x_points[0], geo.x_points[-1], 100)
-    # ax0.plot(X_iso, iso.pressure(X_iso))
-    # ax0.plot(X_iso, heat.pressure(X_iso))
-    # ax0.set_xlabel('x (m)')
-    # ax0.set_ylabel('P (Pa)')
-    # ax1.plot(X_iso, iso.temperature(X_iso))
-    # ax1.plot(X_iso, heat.temperature(X_iso))
-    # ax1.set_xlabel('x (m)')
-    # ax1.set_ylabel('T (K)')
-    # ax2.plot(X_iso, iso.mach(X_iso))
-    # ax2.plot(X_iso, heat.mach(X_iso))
-    # ax2.set_xlabel('x (m)')
-    # ax2.set_ylabel('Mach')
-    # ax3.plot(X_iso, iso.u(X_iso) / iso.mach(X_iso))
-    # ax3.plot(X_iso, heat.u(X_iso) / heat.mach(X_iso))
-    # ax3.set_xlabel('x (m)')
-    # ax3.set_ylabel('u (m/s)')
+    fig, ((ax0, ax1), (ax2, ax3)) = plt.subplots(2, 2)
+    X_iso = np.linspace(geo.x_points[0], geo.x_points[-1], 100)
+    ax0.plot(X_iso, iso.pressure(X_iso))
+    ax0.plot(X_iso, heat.pressure(X_iso))
+    ax0.set_xlabel('x (m)')
+    ax0.set_ylabel('P (Pa)')
+    ax1.plot(X_iso, iso.temperature(X_iso))
+    ax1.plot(X_iso, heat.temperature(X_iso))
+    ax1.set_xlabel('x (m)')
+    ax1.set_ylabel('T (K)')
+    ax2.plot(X_iso, iso.mach(X_iso))
+    ax2.plot(X_iso, heat.mach(X_iso))
+    ax2.set_xlabel('x (m)')
+    ax2.set_ylabel('Mach')
+    ax3.plot(X_iso, iso.u(X_iso) / iso.mach(X_iso))
+    ax3.plot(X_iso, heat.u(X_iso) / heat.mach(X_iso))
+    ax3.set_xlabel('x (m)')
+    ax3.set_ylabel('u (m/s)')
 
-    # f = plt.figure()
-    # x_tanimura = np.linspace(0, 0.105, 100)
-    # ax = f.add_subplot(111)
-    # ax.yaxis.tick_right()
-    # ax.yaxis.set_label_position("right")
-    # im = plt.imread(DATA_BASENAME + ".PT.png")
-    # implot = ax.imshow(im, origin="upper", extent=(0, 12, 100, 240), aspect='auto')
-    # ax.plot(x_tanimura * 100, heat.temperature(x_tanimura))
-    # ax.plot(x_tanimura * 100, iso.temperature(x_tanimura))
-    # ax.set_xlim([0, 12])
-    # ax.set_ylim([100, 240])
+    f = plt.figure()
+    x_tanimura = np.linspace(0, 0.105, 100)
+    ax = f.add_subplot(111)
+    ax.yaxis.tick_right()
+    ax.yaxis.set_label_position("right")
+    im = plt.imread(DATA_BASENAME + ".PT.png")
+    implot = ax.imshow(im, origin="upper", extent=(0, 12, 100, 240), aspect='auto')
+    ax.plot(x_tanimura * 100, heat.temperature(x_tanimura))
+    ax.plot(x_tanimura * 100, iso.temperature(x_tanimura))
+    ax.set_xlim([0, 12])
+    ax.set_ylim([100, 240])
 
     f2 = plt.figure()
     plt.plot(X_iso, cond.frac_co2(X_iso))
