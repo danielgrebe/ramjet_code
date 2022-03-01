@@ -32,7 +32,7 @@ class geometryWarning(Warning):
 
 
 class Geometry:
-    def __init__(self, basename, unit=1e-2, x_star=0.0, nozzle_depth=0.01):
+    def __init__(self, basename, unit=1e-2, x_star=0.0, nozzle_depth=0.01, coef_friction=0):
         """
         Initialize geometry
         :param basename: Basename of data file
@@ -51,8 +51,20 @@ class Geometry:
             warnings.warn("Le col n'est pas spécifié dans les données. Le col sera déterminé par interpolation",
                           geometryWarning)
             self.h_star = self.h(self.x_star)
-        self.area = interp1d(self.x_points, self.h_points * self.nozzle_depth)
         self.area_ratio = interp1d(self.x_points, self.h_points / self.h_star)
+        self.coef_friction = coef_friction
+
+    def D_hydraulique(self, x):
+        return 4 * self.area(x) / self.perimeter(x)
+
+    def perimeter(self, x):
+        return 2 * self.h(x) + 2 * self.nozzle_depth
+
+    def area(self, x):
+        return self.h(x) * self.nozzle_depth
+
+    def f(self, x):
+        return self.coef_friction
 
 
 class InitialConditions:
@@ -225,22 +237,39 @@ class HeatEcoulement(IsoEcoulement):
         temp_array_super[0] = self._temp_iso(x_array_super[0])
         rho_array_super[0] = self._rho_iso(x_array_super[0])
         for i in range(len(x_array_super) - 1):
+            x = x_array_super[i]
+            dx = x_array_super[i+1] - x_array_super[i]
+            f = self.geo.f(x)
+            pressure = self.gas_prop.pressure(temp_array_super[i], rho_array_super[i])
             dq = self.q(x_array_super[i + 1]) - self.q(x_array_super[i])
-            dA_A = (self.geo.area(x_array_super[i + 1]) -
-                    self.geo.area(x_array_super[i])) / self.geo.area(x_array_super[i])
+            dA_A = (self.geo.area(x + dx) -
+                    self.geo.area(x)) / self.geo.area(x)
             mach_array_super[i + 1] = np.sqrt(mach_array_super[i] ** 2 +
                                               self._dM2_area(mach_array_super[i],
                                                              dA_A) +
                                               self._dM2_heat(mach_array_super[i],
                                                              dq,
-                                                             temp_array_super[i]))
+                                                             temp_array_super[i]) +
+                                              self._dM2_momentum(mach_array_super[i],
+                                                                 f,
+                                                                 dx,
+                                                                 self.geo.D_hydraulique(x),
+                                                                 pressure,
+                                                                 self.geo.area(x)))
             temp_array_super[i + 1] = (temp_array_super[i] +
                                        self._dT_area(temp_array_super[i],
                                                      mach_array_super[i],
                                                      dA_A) +
                                        self._dT_heat(mach_array_super[i],
                                                      dq,
-                                                     temp_array_super[i]))
+                                                     temp_array_super[i]) +
+                                       self._dT_momentum(temp_array_super[i],
+                                                         mach_array_super[i],
+                                                         f,
+                                                         dx,
+                                                         self.geo.D_hydraulique(x),
+                                                         pressure,
+                                                         self.geo.area(x)))
             rho_array_super[i + 1] = (rho_array_super[i] +
                                       self._drho_area(rho_array_super[i],
                                                       mach_array_super[i],
@@ -248,7 +277,14 @@ class HeatEcoulement(IsoEcoulement):
                                       self._drho_heat(rho_array_super[i],
                                                       mach_array_super[i],
                                                       dq,
-                                                      temp_array_super[i]))
+                                                      temp_array_super[i]) +
+                                      self._drho_momentum(rho_array_super[i],
+                                                          mach_array_super[i],
+                                                          f,
+                                                          dx,
+                                                          self.geo.D_hydraulique(x),
+                                                          pressure,
+                                                          self.geo.area(x)))
         x_array = np.concatenate((x_array_sub, x_array_super))
         mach_array = np.concatenate((mach_array_sub, mach_array_super))
         temp_array = np.concatenate((temp_array_sub, temp_array_super))
@@ -288,6 +324,13 @@ class HeatEcoulement(IsoEcoulement):
         variable = (dq - dWx + dH) / (c_p * T)
         return M ** 2 * coef * variable
 
+    def _dM2_momentum(self, M, f, dx, D, p, A, dX=0, dw_w=0, y=1, gamma=None):
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = gamma * M ** 2 * (1 + (gamma - 1) / 2 * M ** 2) / (1 - M ** 2)
+        variable = 4 * f * dx / D + 2 * dX / (gamma * p * A * M ** 2) - 2 * y * dw_w
+        return M ** 2 * coef * variable
+
     def _dT_area(self, T, M, dA_A, gamma=None):
         if gamma is None:
             gamma = self.gas_prop.gamma
@@ -312,6 +355,13 @@ class HeatEcoulement(IsoEcoulement):
             gamma = self.gas_prop.gamma
         coef = (1 - gamma * M ** 2) / (1 - M ** 2)
         variable = (dq - dWx + dH) / (c_p * T)
+        return T * coef * variable
+
+    def _dT_momentum(self, T, M, f, dx, D, p, A, dX=0, dw_w=0, y=1, gamma=None):
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = - gamma * (gamma - 1) * M ** 4 / (2 * (1 - M ** 2))
+        variable = 4 * f * dx / D + 2 * dX / (gamma * p * A * M ** 2) - 2 * y * dw_w
         return T * coef * variable
 
     def _drho_area(self, rho, M, dA_A, gamma=None):
@@ -340,8 +390,12 @@ class HeatEcoulement(IsoEcoulement):
         variable = (dq - dWx + dH) / (c_p * T)
         return rho * coef * variable
 
-    # def _drho_heat(self, mach, dA_A, dq, T, rho):
-    #     return rho * (dA_A * mach ** 2 / (1 - mach ** 2) - dq / self.gas_prop.c_p / T / (1 - mach ** 2))
+    def _drho_momentum(self, rho, M, f, dx, D, p, A, dX=0, dw_w=0, y=1, gamma=None):
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = - gamma * M ** 2 / (2 * (1 - M ** 2))
+        variable = 4 * f * dx / D + 2 * dX / (gamma * p * A * M ** 2) - 2 * y * dw_w
+        return rho * coef * variable
 
 
 def main():
