@@ -203,7 +203,7 @@ class IsoEcoulement(Ecoulement):
     pressure = _pressure_iso
 
 
-class HeatEcoulement(IsoEcoulement):
+class General_1D_Flow(IsoEcoulement):
     def __init__(self,
                  geo: Geometry,
                  init_cond: InitialConditions,
@@ -255,7 +255,10 @@ class HeatEcoulement(IsoEcoulement):
                                                                  dx,
                                                                  self.geo.D_hydraulique(x),
                                                                  pressure,
-                                                                 self.geo.area(x)))
+                                                                 self.geo.area(x)) +
+                                              self._dM2_mass(mach_array_super[i]) +
+                                              self._dM2_mol(mach_array_super[i]) +
+                                              self._dM2_gamma(mach_array_super[i]))
             temp_array_super[i + 1] = (temp_array_super[i] +
                                        self._dT_area(temp_array_super[i],
                                                      mach_array_super[i],
@@ -269,7 +272,12 @@ class HeatEcoulement(IsoEcoulement):
                                                          dx,
                                                          self.geo.D_hydraulique(x),
                                                          pressure,
-                                                         self.geo.area(x)))
+                                                         self.geo.area(x)) +
+                                       self._dT_mass(temp_array_super[i],
+                                                     mach_array_super[i]) +
+                                       self._dT_mol(temp_array_super[i],
+                                                    mach_array_super[i]) +
+                                       self._dT_gamma(temp_array_super[i]))
             rho_array_super[i + 1] = (rho_array_super[i] +
                                       self._drho_area(rho_array_super[i],
                                                       mach_array_super[i],
@@ -284,7 +292,12 @@ class HeatEcoulement(IsoEcoulement):
                                                           dx,
                                                           self.geo.D_hydraulique(x),
                                                           pressure,
-                                                          self.geo.area(x)))
+                                                          self.geo.area(x)) +
+                                      self._drho_mass(rho_array_super[i],
+                                                      mach_array_super[i]) +
+                                      self._drho_mol(rho_array_super[i],
+                                                     mach_array_super[i]) +
+                                      self._drho_gamma(rho_array_super[i]))
         x_array = np.concatenate((x_array_sub, x_array_super))
         mach_array = np.concatenate((mach_array_sub, mach_array_super))
         temp_array = np.concatenate((temp_array_sub, temp_array_super))
@@ -331,6 +344,27 @@ class HeatEcoulement(IsoEcoulement):
         variable = 4 * f * dx / D + 2 * dX / (gamma * p * A * M ** 2) - 2 * y * dw_w
         return M ** 2 * coef * variable
 
+    def _dM2_mass(self, M, dw_w=0, gamma=None):
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = 2 * (1 + gamma * M ** 2) * (1 + (gamma - 1) / 2 * M ** 2) / (1 - M ** 2)
+        variable = dw_w
+        return M ** 2 * coef * variable
+
+    def _dM2_mol(self, M, dW_W=0, gamma=None):
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = - (1 + gamma * M ** 2) / (1 - M ** 2)
+        variable = dW_W
+        return M ** 2 * coef * variable
+
+    def _dM2_gamma(self, M, dgamma_gamma=0, gamma=None):
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = -1
+        variable = dgamma_gamma
+        return M ** 2 * coef * variable
+
     def _dT_area(self, T, M, dA_A, gamma=None):
         if gamma is None:
             gamma = self.gas_prop.gamma
@@ -362,6 +396,27 @@ class HeatEcoulement(IsoEcoulement):
             gamma = self.gas_prop.gamma
         coef = - gamma * (gamma - 1) * M ** 4 / (2 * (1 - M ** 2))
         variable = 4 * f * dx / D + 2 * dX / (gamma * p * A * M ** 2) - 2 * y * dw_w
+        return T * coef * variable
+
+    def _dT_mass(self, T, M, dw_w=0, gamma=None):
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = - (gamma - 1) * M ** 2 * (1 + gamma * M ** 2) / (1 - M ** 2)
+        variable = dw_w
+        return T * coef * variable
+
+    def _dT_gamma(self, T, dgamma_gamma=0, gamma=None):
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = 0
+        variable = dgamma_gamma
+        return T * coef * variable
+
+    def _dT_mol(self, T, M, dW_W=0, gamma=None):
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = (gamma - 1) * M ** 2 / (1 - M ** 2)
+        variable = dW_W
         return T * coef * variable
 
     def _drho_area(self, rho, M, dA_A, gamma=None):
@@ -397,13 +452,34 @@ class HeatEcoulement(IsoEcoulement):
         variable = 4 * f * dx / D + 2 * dX / (gamma * p * A * M ** 2) - 2 * y * dw_w
         return rho * coef * variable
 
+    def _drho_mass(self, rho, M, dw_w=0, gamma=None):
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = - (gamma + 1) * M ** 2 / (1 - M ** 2)
+        variable = dw_w
+        return rho * coef * variable
+
+    def _drho_mol(self, rho, M, dW_W=0, gamma=None):
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = 1 / (1 - M ** 2)
+        variable = dW_W
+        return rho * coef * variable
+
+    def _drho_gamma(self, rho, dgamma_gamma=0, gamma=None):
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = 0
+        variable = dgamma_gamma
+        return rho * coef * variable
+
 
 def main():
     geo = Geometry(DATA_BASENAME)
     init_cond = InitialConditions(P_0, T_0)
     gas_prop = IdealGas(gamma=GAMMA, masse_molaire=MASSE_MOLAIRE * 1000, c_p=C_p)
     iso = IsoEcoulement(geo, init_cond, gas_prop)
-    heat = HeatEcoulement(geo, init_cond, gas_prop, DATA_BASENAME)
+    heat = General_1D_Flow(geo, init_cond, gas_prop, DATA_BASENAME)
 
     # -----------------------------------------------------------------------------
     #                               PLOTTING
