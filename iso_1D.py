@@ -22,6 +22,21 @@ C_p = 1.006e3  # J/(kg*K)
 X_STAR_OFFSET = 0.001  # m
 N_DEFAULT = 1000
 
+# paramètres particules
+PARTICLE_MASS_FLOW_RATE = 10e-3  # kg/s
+PART_RADIUS = 2.5e-6
+A_N = 4*np.pi*PART_RADIUS**2
+BOLTZMAN = 1.380649e-23
+CONTACT_PARAMETER = 0.95
+AVAGADRO = 6.022e23
+MASSE_MOLAIRE_CO2 = 7.3082e-26 * AVAGADRO
+DRY_ICE_SURFACE_TENSION = 0.08
+RHO_DRY_ICE = 1.6e3  # kg/m^3
+MEAN_JUMPING_DISTANCE = 0.4e-9  # m
+CO2_VIBRATION_FREQUENCY = 2.9e12
+DESORPTION_ENERGY = 2e4  # J/mol
+MASSE_PARTICULE = 8.85e-12  # kg
+
 
 class geometryWarning(Warning):
     def __int__(self, message):
@@ -84,6 +99,7 @@ class IdealGas(GasProperties):
         self.gamma = gamma
         self.R = self.R_UNIVERSAL / masse_molaire
         self.c_p = c_p
+        self.masse_molaire = masse_molaire
 
     def pressure(self, temperature, density):
         """
@@ -474,12 +490,192 @@ class General_1D_Flow(IsoEcoulement):
         return rho * coef * variable
 
 
+class CondensingEcoulement(General_1D_Flow):
+    def __init__(self,
+                 geo: Geometry,
+                 init_cond: InitialConditions,
+                 gas_prop: IdealGas,
+                 basename,
+                 part_mass_flow_rate,
+                 n = N_DEFAULT):
+        self.part_mass_flow_rate = part_mass_flow_rate
+        self.geo = geo
+        self.init_cond = init_cond
+        self.gas_prop = gas_prop
+        self.mach_array = None
+
+        # import heatdata
+        self.q = lambda x: 0
+        x_array, mach_array, temp_array, rho_array, frac_co2_array, nuc_array = self.calculate(n)
+        self.mach = interp1d(x_array, mach_array)
+        self.temperature = interp1d(x_array, temp_array)
+        self.rho = interp1d(x_array, rho_array)
+        self.pressure = interp1d(x_array, self.gas_prop.pressure(temp_array, rho_array))
+        self.u = interp1d(x_array, self.gas_prop.speed_of_sound(temp_array) * mach_array)
+        self.nucleation_rate = interp1d(x_array, nuc_array)
+        self.frac_co2 = interp1d(x_array, frac_co2_array)
+
+    def calculate(self, n):
+        x_array_sub = np.linspace(self.geo.x_points[0], self.geo.x_star + X_STAR_OFFSET, n)
+        mach_array_sub = self._mach_iso(x_array_sub)
+        temp_array_sub = self._temp_iso(x_array_sub)
+        rho_array_sub = self._rho_iso(x_array_sub)
+        nuc_array_sub = np.zeros(x_array_sub.shape)
+        frac_co2_array_sub = np.ones(x_array_sub.shape) * CO2
+        x_array_super = np.linspace(self.geo.x_star + X_STAR_OFFSET, self.geo.x_points[-1], n)
+        mach_array_super = np.zeros(x_array_sub.shape)
+        temp_array_super = np.zeros(x_array_sub.shape)
+        rho_array_super = np.zeros(x_array_sub.shape)
+        nuc_array_super = np.zeros(x_array_super.shape)
+        nuc_array_super[0] = 0
+        frac_co2_array_super = np.zeros(x_array_super.shape)
+        frac_co2_array_super[0] = CO2
+        mach_array_super[0] = self._mach_iso(x_array_super[0])
+        temp_array_super[0] = self._temp_iso(x_array_super[0])
+        rho_array_super[0] = self._rho_iso(x_array_super[0])
+        for i in range(len(x_array_super) - 1):
+            nuc_array_super[i] = self._nucleation_rate(frac_co2_array_super[i], rho_array_super[i], temp_array_super[i])
+            x = x_array_super[i]
+            dx = x_array_super[i+1] - x_array_super[i]
+            f = self.geo.f(x)
+            pressure = self.gas_prop.pressure(temp_array_super[i], rho_array_super[i])
+            dq = self.q(x_array_super[i + 1]) - self.q(x_array_super[i])
+            dA_A = (self.geo.area(x + dx) -
+                    self.geo.area(x)) / self.geo.area(x)
+            mach_array_super[i + 1] = np.sqrt(mach_array_super[i] ** 2 +
+                                              self._dM2_area(mach_array_super[i],
+                                                             dA_A) +
+                                              self._dM2_heat(mach_array_super[i],
+                                                             dq,
+                                                             temp_array_super[i]) +
+                                              self._dM2_momentum(mach_array_super[i],
+                                                                 f,
+                                                                 dx,
+                                                                 self.geo.D_hydraulique(x),
+                                                                 pressure,
+                                                                 self.geo.area(x)) +
+                                              self._dM2_mass(mach_array_super[i]) +
+                                              self._dM2_mol(mach_array_super[i]) +
+                                              self._dM2_gamma(mach_array_super[i]))
+            temp_array_super[i + 1] = (temp_array_super[i] +
+                                       self._dT_area(temp_array_super[i],
+                                                     mach_array_super[i],
+                                                     dA_A) +
+                                       self._dT_heat(mach_array_super[i],
+                                                     dq,
+                                                     temp_array_super[i]) +
+                                       self._dT_momentum(temp_array_super[i],
+                                                         mach_array_super[i],
+                                                         f,
+                                                         dx,
+                                                         self.geo.D_hydraulique(x),
+                                                         pressure,
+                                                         self.geo.area(x)) +
+                                       self._dT_mass(temp_array_super[i],
+                                                     mach_array_super[i]) +
+                                       self._dT_mol(temp_array_super[i],
+                                                    mach_array_super[i]) +
+                                       self._dT_gamma(temp_array_super[i]))
+            rho_array_super[i + 1] = (rho_array_super[i] +
+                                      self._drho_area(rho_array_super[i],
+                                                      mach_array_super[i],
+                                                      dA_A) +
+                                      self._drho_heat(rho_array_super[i],
+                                                      mach_array_super[i],
+                                                      dq,
+                                                      temp_array_super[i]) +
+                                      self._drho_momentum(rho_array_super[i],
+                                                          mach_array_super[i],
+                                                          f,
+                                                          dx,
+                                                          self.geo.D_hydraulique(x),
+                                                          pressure,
+                                                          self.geo.area(x)) +
+                                      self._drho_mass(rho_array_super[i],
+                                                      mach_array_super[i]) +
+                                      self._drho_mol(rho_array_super[i],
+                                                     mach_array_super[i]) +
+                                      self._drho_gamma(rho_array_super[i]))
+            frac_co2_array_super[i + 1] = frac_co2_array_super[i] + self._dfrac_co2(nuc_array_super[i],
+                                                                                rho_array_super[i],
+                                                                                rho_array_super[i + 1] -
+                                                                                rho_array_super[i],
+                                                                                frac_co2_array_super[i],
+                                                                                x_array_super[i + 1] - x_array_super[i],
+                                                                                mach_array_super[
+                                                                                    i] * self.gas_prop.speed_of_sound(
+                                                                                    temp_array_super[i]),
+                                                                                self.geo.area(x_array_super[i]))
+
+        x_array = np.concatenate((x_array_sub, x_array_super))
+        mach_array = np.concatenate((mach_array_sub, mach_array_super))
+        temp_array = np.concatenate((temp_array_sub, temp_array_super))
+        rho_array = np.concatenate((rho_array_sub, rho_array_super))
+        frac_co2_array = np.concatenate((frac_co2_array_sub, frac_co2_array_super))
+        nuc_array = np.concatenate((nuc_array_sub, nuc_array_super))
+        return x_array, mach_array, temp_array, rho_array, frac_co2_array, nuc_array
+
+    def _nucleation_rate(self, frac_co2, rho, temp):
+        a_n = A_N
+        m = CONTACT_PARAMETER
+        m_co2 = MASSE_MOLAIRE_CO2 / AVAGADRO
+        sigma = DRY_ICE_SURFACE_TENSION
+        t_part = temp
+        T_n = temp
+        rho_co2 = RHO_DRY_ICE
+        p_co2 = self.gas_prop.pressure(temp, rho) * frac_co2
+        # p_sat_co2 = 100000*10**(6.81228-1301.779/(T_n-3.494))
+        p_sat_co2 = 1.38e12 * np.exp(-3182.48/t_part)
+        S = p_co2 / p_sat_co2
+        if S < 1.001:
+            S = 1.001
+        k = BOLTZMAN
+        r_crit = 2 * m_co2 * sigma / rho_co2 / k / T_n / np.log(S)
+        x = PART_RADIUS / r_crit
+        d = MEAN_JUMPING_DISTANCE
+        nu = CO2_VIBRATION_FREQUENCY
+        theta = 1 #TODO: investiguer d'ou vient ce valeur
+        delta_f_sd = DESORPTION_ENERGY / 10 / AVAGADRO
+        n_crit = 4 * np.pi * r_crit ** 3 * rho_co2 * 1000 / 3 / m_co2
+        delta_f_hom = 4* np.pi * sigma * r_crit ** 2 / 3
+        c_1s = p_co2 / nu / np.sqrt(2*np.pi * m_co2 * k * T_n)*np.exp(DESORPTION_ENERGY/AVAGADRO/k/T_n)
+        z_hom = np.sqrt(delta_f_hom/3/np.pi/k/T_n/n_crit**2)
+        z_het = z_hom * np.sqrt(4 / (2 + ((1 - m*x)*(2 - 4 * m * x - (m ** 2 - 3)*x**2))/(1-2*m*x+x**2)**1.5))
+        beta_het = np.pi * 2 * r_crit * np.sin(theta) * d * c_1s * nu * np.exp(-delta_f_sd/k/T_n)
+        delta_f_het = self._f(m, x) * delta_f_hom
+        return a_n * z_het * beta_het * c_1s * np.exp(-delta_f_het / k / T_n)
+
+    def _f(self, m, x):
+        phi = np.sqrt(1 - 2*m*x + x ** 2)
+        k = (x-m)/ phi
+        return 0.5 * (1 + (1 - m * x) ** 3 / phi ** 3 + x ** 3 * (2 - 3 * k + k ** 3) + 3 * m * x ** 2 * (k - 1))
+
+    def _dfrac_co2(self, nucleation_rate, rho_gaz, drho_gaz, frac_co2, dx, u, area):
+        """
+
+        :param nucleation_rate: Taux de nucléation en molécules par noyau par seconde
+        :param rho_gaz: Masse volumique du gaz
+        :param drho_gaz: Variation de la masse volumique du gaz
+        :param frac_co2: Fraction molaire du CO2
+        :param dx: Variation de la position
+        :param u: Vitesse de l'écoulement
+        :param area: Section de l'écoulement
+        :return: variation de la fraction molaire de CO2
+        """
+        n_tot = rho_gaz / self.gas_prop.masse_molaire * 1000
+        dn_tot = drho_gaz / self.gas_prop.masse_molaire * 1000  # valide car on néglige le variation de la masse molaire du gaz
+        n_particles = self.part_mass_flow_rate / u / area / MASSE_PARTICULE
+        dn_co2 = -nucleation_rate * n_particles * dx / u / AVAGADRO + drho_gaz / rho_gaz * n_tot * frac_co2
+        n_co2 = n_tot * frac_co2
+        return (dn_co2 * n_tot - dn_tot * n_co2) / n_tot ** 2
+
 def main():
     geo = Geometry(DATA_BASENAME)
     init_cond = InitialConditions(P_0, T_0)
     gas_prop = IdealGas(gamma=GAMMA, masse_molaire=MASSE_MOLAIRE * 1000, c_p=C_p)
     iso = IsoEcoulement(geo, init_cond, gas_prop)
     heat = General_1D_Flow(geo, init_cond, gas_prop, DATA_BASENAME)
+    cond = CondensingEcoulement(geo, init_cond, gas_prop, DATA_BASENAME, PARTICLE_MASS_FLOW_RATE)
 
     # -----------------------------------------------------------------------------
     #                               PLOTTING
@@ -514,6 +710,11 @@ def main():
     ax.plot(x_tanimura * 100, iso.temperature(x_tanimura))
     ax.set_xlim([0, 12])
     ax.set_ylim([100, 240])
+
+    f2 = plt.figure()
+    plt.plot(X_iso, cond.frac_co2(X_iso))
+    f3 = plt.figure()
+    plt.plot(X_iso, cond.nucleation_rate(X_iso))
     plt.show()
 
 
