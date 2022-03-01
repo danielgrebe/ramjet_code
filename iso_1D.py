@@ -12,9 +12,15 @@ P_0 = 2.026e5  # Pa
 T_0 = 288.2  # K
 # Propriétés du gaz
 CO2 = 0.212  # fraction massique du CO_2
+H2O = 0.0016
 MASSE_MOLAIRE = 2*14.5e-3  # kg/mol
-GAMMA = (1-CO2)*1.4 + CO2*1.289
+GAMMA = (1-CO2-H2O)*1.4 + CO2*1.289 + H2O*1.330
+GAMMA = 1.36
 C_p = 1.006e3  # J/(kg*K)
+
+# paramètres
+X_STAR_OFFSET = 0.001  # m
+N_DEFAULT = 1000
 
 
 class geometryWarning(Warning):
@@ -118,7 +124,7 @@ class IsoEcoulement(Ecoulement):
         else:
             self.mach_array = None
 
-    def mach(self, x):
+    def _mach_iso(self, x):
         single_output = False
         if not isinstance(x, Iterable):
             x = [x]
@@ -150,17 +156,17 @@ class IsoEcoulement(Ecoulement):
                                                                 / (2 * (self.gas_prop.gamma - 1))) - area_ratio
         return fsolve(func, 0.1)
 
-    def u(self, x):
-        return self.mach(x) * self.gas_prop.speed_of_sound(self.temperature(x))
+    def _u_iso(self, x):
+        return self._mach_iso(x) * self.gas_prop.speed_of_sound(self._temp_iso(x))
 
-    def rho(self, x):
-        return self.gas_prop.density(self.temperature(x), self.pressure(x))
+    def _rho_iso(self, x):
+        return self.gas_prop.density(self._temp_iso(x), self._pressure_iso(x))
 
-    def temperature(self, x):
-        return self.init_cond.temperature / self._T_ratio_mach(self.mach(x))
+    def _temp_iso(self, x):
+        return self.init_cond.temperature / self._T_ratio_mach(self._mach_iso(x))
 
-    def pressure(self, x):
-        return self.init_cond.pressure / self._p_ratio_mach(self.mach(x))
+    def _pressure_iso(self, x):
+        return self.init_cond.pressure / self._p_ratio_mach(self._mach_iso(x))
 
     def _initialize_mach(self):
         raise NotImplementedError("Precalculated mach array not yet implemented")
@@ -177,60 +183,46 @@ class IsoEcoulement(Ecoulement):
         """
         return self._T_ratio_mach(m) ** (self.gas_prop.gamma / (self.gas_prop.gamma - 1))
 
+    temperature = _temp_iso
+    rho = _rho_iso
+    mach = _mach_iso
+    u = _u_iso
+    pressure = _pressure_iso
+
 
 class HeatEcoulement(IsoEcoulement):
     def __init__(self,
                  geo: Geometry,
                  init_cond: InitialConditions,
                  gas_prop: IdealGas,
-                 basename):
+                 basename,
+                 n=N_DEFAULT):
         self.geo = geo
         self.init_cond = init_cond
         self.gas_prop = gas_prop
+        self.mach_array = None
 
         # import heatdata
         self.q = self._import_heat(basename)
-        x_array, mach_array, temp_array, rho_array = self.calculate()
+        x_array, mach_array, temp_array, rho_array = self.calculate(n)
         self.mach = interp1d(x_array, mach_array)
         self.temperature = interp1d(x_array, temp_array)
         self.rho = interp1d(x_array, rho_array)
         self.pressure = interp1d(x_array, self.gas_prop.pressure(temp_array, rho_array))
         self.u = interp1d(x_array, self.gas_prop.speed_of_sound(temp_array) * mach_array)
 
-    def calculate(self, n=1000):
-        x_array_sub = np.linspace(self.geo.x_points[0], self.geo.x_star, n)
-        mach_array_sub = np.zeros(x_array_sub.shape)
-        temp_array_sub = np.zeros(x_array_sub.shape)
-        rho_array_sub = np.zeros(x_array_sub.shape)
-        mach_array_sub[0] = self._mach_area_ratio_subsonic(self.geo.area_ratio(x_array_sub[0]))
-        temp_array_sub[0] = self.init_cond.temperature / self._T_ratio_mach(mach_array_sub[0])
-        rho_array_sub[0] = self.gas_prop.density(temp_array_sub[0], self.init_cond.pressure / self._p_ratio_mach(mach_array_sub[0]))
-        for i in range(len(x_array_sub) - 1):
-            dq = self.q(x_array_sub[i + 1]) - self.q(x_array_sub[i])
-            mach_array_sub[i + 1] = np.sqrt(mach_array_sub[i] ** 2 +
-                                        self._dM2_heat(mach_array_sub[i],
-                                                       (self.geo.area(x_array_sub[i + 1]) - self.geo.area(
-                                                           x_array_sub[i])) / self.geo.area(x_array_sub[i]),
-                                                       dq,
-                                                       temp_array_sub[i]))
-            temp_array_sub[i + 1] = temp_array_sub[i] + self._dT_heat(mach_array_sub[i],
-                                                              (self.geo.area(x_array_sub[i + 1]) - self.geo.area(
-                                                                  x_array_sub[i])) / self.geo.area(x_array_sub[i]),
-                                                              dq,
-                                                              temp_array_sub[i])
-            rho_array_sub[i + 1] = rho_array_sub[i] + self._drho_heat(mach_array_sub[i],
-                                                              (self.geo.area(x_array_sub[i + 1]) - self.geo.area(
-                                                                  x_array_sub[i])) / self.geo.area(x_array_sub[i]),
-                                                              dq,
-                                                              temp_array_sub[i],
-                                                              rho_array_sub[i])
-        x_array_super = np.linspace(self.geo.x_star, self.geo.x_points[-1], n)
+    def calculate(self, n):
+        x_array_sub = np.linspace(self.geo.x_points[0], self.geo.x_star + X_STAR_OFFSET, n)
+        mach_array_sub = self._mach_iso(x_array_sub)
+        temp_array_sub = self._temp_iso(x_array_sub)
+        rho_array_sub = self._rho_iso(x_array_sub)
+        x_array_super = np.linspace(self.geo.x_star + X_STAR_OFFSET, self.geo.x_points[-1], n)
         mach_array_super = np.zeros(x_array_sub.shape)
         temp_array_super = np.zeros(x_array_sub.shape)
         rho_array_super = np.zeros(x_array_sub.shape)
-        mach_array_super[0] = 1.005
-        temp_array_super[0] = temp_array_sub[-1]
-        rho_array_super[0] = rho_array_sub[-1]
+        mach_array_super[0] = self._mach_iso(x_array_super[0])
+        temp_array_super[0] = self._temp_iso(x_array_super[0])
+        rho_array_super[0] = self._rho_iso(x_array_super[0])
         for i in range(len(x_array_super) - 1):
             dq = self.q(x_array_super[i + 1]) - self.q(x_array_super[i])
             mach_array_super[i + 1] = np.sqrt(mach_array_super[i] ** 2 +
@@ -261,6 +253,7 @@ class HeatEcoulement(IsoEcoulement):
         q_points = np.genfromtxt(basename + ".q.csv").transpose()
         X_q = np.concatenate(([self.geo.x_points[0]], q_points[0] / 100, [self.geo.x_points[-1]]))
         Y_q = np.concatenate((np.array([0]), q_points[1], [q_points[1, -1]])) * 1000
+        # Y_q = np.zeros(Y_q.shape)
         return interp1d(X_q, Y_q)
 
     def _dM2_heat(self, mach, dA_A, dq, T):
