@@ -13,8 +13,8 @@ T_0 = 288.2  # K
 # Propriétés du gaz
 CO2 = 0.212  # fraction massique du CO_2
 H2O = 0.0016
-MASSE_MOLAIRE = 2*14.5e-3  # kg/mol
-GAMMA = (1-CO2-H2O)*1.4 + CO2*1.289 + H2O*1.330
+MASSE_MOLAIRE = 2 * 14.5e-3  # kg/mol
+GAMMA = (1 - CO2 - H2O) * 1.4 + CO2 * 1.289 + H2O * 1.330
 GAMMA = 1.36
 C_p = 1.006e3  # J/(kg*K)
 
@@ -151,9 +151,10 @@ class IsoEcoulement(Ecoulement):
 
     def _mach_area_ratio_subsonic(self, area_ratio):
         """Ratio A/A* en fonction du nombre de Mach"""
-        func = lambda mach :1 / mach * ((1 + (self.gas_prop.gamma - 1) / 2 * mach ** 2) /
-                           ((self.gas_prop.gamma + 1) / 2)) ** ((self.gas_prop.gamma + 1)
-                                                                / (2 * (self.gas_prop.gamma - 1))) - area_ratio
+        func = lambda mach: 1 / mach * ((1 + (self.gas_prop.gamma - 1) / 2 * mach ** 2) /
+                                        ((self.gas_prop.gamma + 1) / 2)) ** ((self.gas_prop.gamma + 1)
+                                                                             / (2 * (
+                        self.gas_prop.gamma - 1))) - area_ratio
         return fsolve(func, 0.1)
 
     def _u_iso(self, x):
@@ -225,24 +226,29 @@ class HeatEcoulement(IsoEcoulement):
         rho_array_super[0] = self._rho_iso(x_array_super[0])
         for i in range(len(x_array_super) - 1):
             dq = self.q(x_array_super[i + 1]) - self.q(x_array_super[i])
+            dA_A = (self.geo.area(x_array_super[i + 1]) -
+                    self.geo.area(x_array_super[i])) / self.geo.area(x_array_super[i])
             mach_array_super[i + 1] = np.sqrt(mach_array_super[i] ** 2 +
-                                            self._dM2_heat(mach_array_super[i],
-                                                           (self.geo.area(x_array_super[i + 1]) - self.geo.area(
-                                                               x_array_super[i])) / self.geo.area(x_array_super[i]),
-                                                           dq,
-                                                           temp_array_super[i]))
-            temp_array_super[i + 1] = temp_array_super[i] + self._dT_heat(mach_array_super[i],
-                                                                      (self.geo.area(x_array_super[i + 1]) - self.geo.area(
-                                                                          x_array_super[i])) / self.geo.area(x_array_super[i]),
-                                                                      dq,
-                                                                      temp_array_super[i])
-            rho_array_super[i + 1] = rho_array_super[i] + self._drho_heat(mach_array_super[i],
-                                                                      (self.geo.area(x_array_super[i + 1]) - self.geo.area(
-                                                                          x_array_super[i])) / self.geo.area(x_array_super[i]),
-                                                                      dq,
-                                                                      temp_array_super[i],
-                                                                      rho_array_super[i])
-
+                                              self._dM2_area(mach_array_super[i],
+                                                             dA_A) +
+                                              self._dM2_heat(mach_array_super[i],
+                                                             dq,
+                                                             temp_array_super[i]))
+            temp_array_super[i + 1] = (temp_array_super[i] +
+                                       self._dT_area(temp_array_super[i],
+                                                     mach_array_super[i],
+                                                     dA_A) +
+                                       self._dT_heat(mach_array_super[i],
+                                                     dq,
+                                                     temp_array_super[i]))
+            rho_array_super[i + 1] = (rho_array_super[i] +
+                                      self._drho_area(rho_array_super[i],
+                                                      mach_array_super[i],
+                                                      dA_A) +
+                                      self._drho_heat(rho_array_super[i],
+                                                      mach_array_super[i],
+                                                      dq,
+                                                      temp_array_super[i]))
         x_array = np.concatenate((x_array_sub, x_array_super))
         mach_array = np.concatenate((mach_array_sub, mach_array_super))
         temp_array = np.concatenate((temp_array_sub, temp_array_super))
@@ -256,16 +262,87 @@ class HeatEcoulement(IsoEcoulement):
         # Y_q = np.zeros(Y_q.shape)
         return interp1d(X_q, Y_q)
 
-    def _dM2_heat(self, mach, dA_A, dq, T):
-        return mach ** 2 * (dA_A * -2 * (1 + (self.gas_prop.gamma - 1) / 2 * mach ** 2) / (1 - mach ** 2)
-                            + dq / self.gas_prop.c_p / T * (1 + self.gas_prop.gamma * mach ** 2) / (1 - mach ** 2))
+    def _dM2_area(self, M, dA_A, gamma=None):
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = - 2 * (1 + (gamma - 1) / 2 * M ** 2) / (1 - M ** 2)
+        return M ** 2 * coef * dA_A
 
-    def _dT_heat(self, mach, dA_A, dq, T):
-        return T * (dA_A * (self.gas_prop.gamma - 1) * mach ** 2 / (1 - mach ** 2) +
-                    dq / self.gas_prop.c_p / T * (1 - self.gas_prop.gamma * mach ** 2) / (1 - mach ** 2))
+    def _dM2_heat(self, M, dq, T, c_p=None, gamma=None, dWx=0, dH=0):
+        """
 
-    def _drho_heat(self, mach, dA_A, dq, T, rho):
-        return rho * (dA_A * mach ** 2 / (1 - mach ** 2) - dq / self.gas_prop.c_p / T / (1 - mach ** 2))
+        :param M: nombre de M
+        :param dq: Apport de chaleur (J)
+        :param T: Température (K)
+        :param c_p: chaleur spécifique à pression constant (J/kgK)
+        :param gamma: ratio de chaleur spécifiques
+        :param dWx: Travail (J)
+        :param dH: variation d'énergie (J)
+        :return: Variation du nombre de M au carré
+        """
+        if c_p is None:
+            c_p = self.gas_prop.c_p
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = (1 + gamma * M ** 2) / (1 - M ** 2)
+        variable = (dq - dWx + dH) / (c_p * T)
+        return M ** 2 * coef * variable
+
+    def _dT_area(self, T, M, dA_A, gamma=None):
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = (gamma - 1) * M ** 2 / (1 - M ** 2)
+        return T * coef * dA_A
+
+    def _dT_heat(self, M, dq, T, c_p=None, gamma=None, dWx=0, dH=0):
+        """
+
+        :param M: nombre de M
+        :param dq: Apport de chaleur (J)
+        :param T: Température (K)
+        :param c_p: chaleur spécifique à pression constant (J/kgK)
+        :param gamma: ratio de chaleur spécifiques
+        :param dWx: Travail (J)
+        :param dH: variation d'énergie (J)
+        :return: Variation du nombre de M au carré
+        """
+        if c_p is None:
+            c_p = self.gas_prop.c_p
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = (1 - gamma * M ** 2) / (1 - M ** 2)
+        variable = (dq - dWx + dH) / (c_p * T)
+        return T * coef * variable
+
+    def _drho_area(self, rho, M, dA_A, gamma=None):
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = M ** 2 / (1 - M ** 2)
+        return rho * coef * dA_A
+
+    def _drho_heat(self, rho, M, dq, T, c_p=None, gamma=None, dWx=0, dH=0):
+        """
+
+        :param M: nombre de M
+        :param dq: Apport de chaleur (J)
+        :param T: Température (K)
+        :param c_p: chaleur spécifique à pression constant (J/kgK)
+        :param gamma: ratio de chaleur spécifiques
+        :param dWx: Travail (J)
+        :param dH: variation d'énergie (J)
+        :return: Variation du nombre de M au carré
+        """
+        if c_p is None:
+            c_p = self.gas_prop.c_p
+        if gamma is None:
+            gamma = self.gas_prop.gamma
+        coef = - 1 / (1 - M ** 2)
+        variable = (dq - dWx + dH) / (c_p * T)
+        return rho * coef * variable
+
+    # def _drho_heat(self, mach, dA_A, dq, T, rho):
+    #     return rho * (dA_A * mach ** 2 / (1 - mach ** 2) - dq / self.gas_prop.c_p / T / (1 - mach ** 2))
+
 
 def main():
     geo = Geometry(DATA_BASENAME)
