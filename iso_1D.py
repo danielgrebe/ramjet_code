@@ -24,7 +24,7 @@ X_STAR_OFFSET = 0.001  # m
 N_DEFAULT = 1000
 
 # paramètres particules
-PARTICLE_MASS_FLOW_RATE = 1e-3  # kg/s
+PARTICLE_MASS_FLOW_RATE = 100e-3  # kg/s
 PART_RADIUS = 2.5e-6
 A_N = 4*np.pi*PART_RADIUS**2
 BOLTZMAN = 1.380649e-23
@@ -282,15 +282,19 @@ class General_1D_Flow(IsoEcoulement):
                  geo: Geometry,
                  init_cond: InitialConditions,
                  gas_prop: IdealGas,
-                 basename,
-                 n=N_DEFAULT):
+                 basename=None,
+                 n=N_DEFAULT,
+                 heat_on=True):
         self.geo = geo
         self.init_cond = init_cond
         self.gas_prop = gas_prop
         self.mach_array = None
 
         # import heatdata
-        self.q = self._import_heat(basename)
+        if heat_on:
+            self.q = self._import_heat(basename)
+        else:
+            self.q = lambda x: 0
         x_array, mach_array, temp_array, rho_array = self.calculate(n)
         self.mach = interp1d(x_array, mach_array)
         self.temperature = interp1d(x_array, temp_array)
@@ -747,7 +751,7 @@ class Condensing_Ecoulement(General_1D_Flow):
         x = PART_RADIUS / r_crit
         d = MEAN_JUMPING_DISTANCE
         nu = CO2_VIBRATION_FREQUENCY
-        theta = 1 #TODO: investiguer d'ou vient ce valeur
+        theta = 0.1 #TODO: investiguer d'ou vient ce valeur
         delta_f_sd = DESORPTION_ENERGY / 10 / AVAGADRO
         n_crit = 4 * np.pi * r_crit ** 3 * rho_co2 * 1000 / 3 / m_co2
         delta_f_hom = 4* np.pi * sigma * r_crit ** 2 / 3
@@ -783,11 +787,11 @@ class Condensing_Ecoulement(General_1D_Flow):
     #     return (dn_co2 * n_tot - dn_tot * n_co2) / n_tot ** 2
 
 def main():
-    geo = Geometry(DATA_BASENAME)
+    geo = Geometry("test/test_data/test_rayleigh")
     init_cond = InitialConditions(P_0, T_0)
     gas_prop = IdealGasVariable(frac_CO2_init=CO2)
     iso = IsoEcoulement(geo, init_cond, gas_prop)
-    heat = General_1D_Flow(geo, init_cond, gas_prop, DATA_BASENAME)
+    heat = General_1D_Flow(geo, init_cond, gas_prop, "test/test_data/test_rayleigh")
     cond = Condensing_Ecoulement(geo, init_cond, gas_prop, DATA_BASENAME, PARTICLE_MASS_FLOW_RATE, n=int(3e3))
 
     # -----------------------------------------------------------------------------
@@ -796,19 +800,19 @@ def main():
     fig, ((ax0, ax1), (ax2, ax3)) = plt.subplots(2, 2)
     X_iso = np.linspace(geo.x_points[0], geo.x_points[-1], 100)
     ax0.plot(X_iso, iso.pressure(X_iso))
-    ax0.plot(X_iso, cond.pressure(X_iso))
+    ax0.plot(X_iso, heat.pressure(X_iso))
     ax0.set_xlabel('x (m)')
     ax0.set_ylabel('P (Pa)')
     ax1.plot(X_iso, iso.temperature(X_iso))
-    ax1.plot(X_iso, cond.temperature(X_iso))
+    ax1.plot(X_iso, heat.temperature(X_iso))
     ax1.set_xlabel('x (m)')
     ax1.set_ylabel('T (K)')
     ax2.plot(X_iso, iso.mach(X_iso))
-    ax2.plot(X_iso, cond.mach(X_iso))
+    ax2.plot(X_iso, heat.mach(X_iso))
     ax2.set_xlabel('x (m)')
     ax2.set_ylabel('Mach')
     ax3.plot(X_iso, iso.u(X_iso) / iso.mach(X_iso))
-    ax3.plot(X_iso, cond.u(X_iso) / cond.mach(X_iso))
+    ax3.plot(X_iso, heat.u(X_iso) / heat.mach(X_iso))
     ax3.set_xlabel('x (m)')
     ax3.set_ylabel('u (m/s)')
 
