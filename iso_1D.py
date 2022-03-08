@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import warnings
 from collections.abc import Iterable
 
-DATA_BASENAME = "data/test_nucleation_tuto"
+DATA_BASENAME = "data/tanimura_2015_run4"
 
 # Conditions initials
 P_0 = 2.026e5  # Pa
@@ -24,7 +24,7 @@ X_STAR_OFFSET = 0.001  # m
 N_DEFAULT = 1000
 
 # paramètres particules
-PARTICLE_MASS_FLOW_RATE = 100e-3  # kg/s
+PARTICLE_MASS_FLOW_RATE = 10e-3  # kg/s
 PART_RADIUS = 2.5e-6
 A_N = 4*np.pi*PART_RADIUS**2
 BOLTZMAN = 1.380649e-23
@@ -51,7 +51,7 @@ class geometryWarning(Warning):
 
 
 class Geometry:
-    def __init__(self, basename, unit=1e-2, x_star=0.0, nozzle_depth=0.01, coef_friction=0):
+    def __init__(self, basename, unit=1e-2, x_star=0.0, nozzle_depth=0.01, friction_on=False):
         """
         Initialize geometry
         :param basename: Basename of data file
@@ -71,7 +71,17 @@ class Geometry:
                           geometryWarning)
             self.h_star = self.h(self.x_star)
         self.area_ratio = interp1d(self.x_points, self.h_points / self.h_star)
-        self.coef_friction = coef_friction
+        if friction_on:
+            self.coef_friction = self._import_friction(basename)
+        else:
+            self.coef_friction = lambda x: 0
+
+    def _import_friction(self, basename):
+        f_points = np.genfromtxt(basename + ".f.csv").transpose()
+        X_f = np.concatenate(([self.x_points[0]], f_points[0] / 100, [self.x_points[-1]]))
+        Y_f = np.concatenate(([f_points[1, 0]], f_points[1], [f_points[1, -1]]))
+        return interp1d(X_f, Y_f)
+
 
     def D_hydraulique(self, x):
         return 4 * self.area(x) / self.perimeter(x)
@@ -83,7 +93,7 @@ class Geometry:
         return self.h(x) * self.nozzle_depth
 
     def f(self, x):
-        return self.coef_friction
+        return self.coef_friction(x)
 
 
 class InitialConditions:
@@ -787,11 +797,11 @@ class Condensing_Ecoulement(General_1D_Flow):
     #     return (dn_co2 * n_tot - dn_tot * n_co2) / n_tot ** 2
 
 def main():
-    geo = Geometry("test/test_data/test_rayleigh")
+    geo = Geometry(DATA_BASENAME)
     init_cond = InitialConditions(P_0, T_0)
     gas_prop = IdealGasVariable(frac_CO2_init=CO2)
     iso = IsoEcoulement(geo, init_cond, gas_prop)
-    heat = General_1D_Flow(geo, init_cond, gas_prop, "test/test_data/test_rayleigh")
+    heat = General_1D_Flow(geo, init_cond, gas_prop, DATA_BASENAME)
     cond = Condensing_Ecoulement(geo, init_cond, gas_prop, DATA_BASENAME, PARTICLE_MASS_FLOW_RATE, n=int(3e3))
 
     # -----------------------------------------------------------------------------
@@ -800,21 +810,22 @@ def main():
     fig, ((ax0, ax1), (ax2, ax3)) = plt.subplots(2, 2)
     X_iso = np.linspace(geo.x_points[0], geo.x_points[-1], 100)
     ax0.plot(X_iso, iso.pressure(X_iso))
-    ax0.plot(X_iso, heat.pressure(X_iso))
+    ax0.plot(X_iso, cond.pressure(X_iso))
     ax0.set_xlabel('x (m)')
     ax0.set_ylabel('P (Pa)')
     ax1.plot(X_iso, iso.temperature(X_iso))
-    ax1.plot(X_iso, heat.temperature(X_iso))
+    ax1.plot(X_iso, cond.temperature(X_iso))
     ax1.set_xlabel('x (m)')
     ax1.set_ylabel('T (K)')
     ax2.plot(X_iso, iso.mach(X_iso))
-    ax2.plot(X_iso, heat.mach(X_iso))
+    ax2.plot(X_iso, cond.mach(X_iso))
     ax2.set_xlabel('x (m)')
     ax2.set_ylabel('Mach')
     ax3.plot(X_iso, iso.u(X_iso) / iso.mach(X_iso))
-    ax3.plot(X_iso, heat.u(X_iso) / heat.mach(X_iso))
+    ax3.plot(X_iso, cond.u(X_iso) / cond.mach(X_iso))
     ax3.set_xlabel('x (m)')
     ax3.set_ylabel('u (m/s)')
+    fig.legend(["Isentropique", "Condensation"])
 
     f = plt.figure()
     x_tanimura = np.linspace(0, 0.105, 100)
@@ -830,8 +841,12 @@ def main():
 
     f2 = plt.figure()
     plt.plot(X_iso, cond.frac_co2(X_iso))
+    plt.xlabel("Position (m)")
+    plt.ylabel("Fraction massique de CO2")
     f3 = plt.figure()
     plt.plot(X_iso, cond.nucleation_rate(X_iso))
+    plt.xlabel("Position (m)")
+    plt.ylabel("Taux de nucléation")
     plt.show()
 
 
