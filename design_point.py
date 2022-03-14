@@ -8,6 +8,8 @@ MASSE_MOLAIRE_COMBUSTION = 27.6
 TEMP_COMBUSTION = 2400  # K
 MACH_COMBUSTION = 0.5
 M_FIN_COMBUSTION = 0.85
+g_0 = 9.81  # N/kg
+THRUST = 10e3  # N
 
 # Fonction to approximate the design point of each section of a Ramjet
 
@@ -31,11 +33,13 @@ rho_01 = gas.density(T_01, P_01)
 # Station 1
 init_cond = iso.InitialConditions(P_01, T_01)
 flow = iso.IsoEcoulement(geo, init_cond, gas)
+u_1 = 2.8 * gas.speed_of_sound(T_1)
 print('Station 1')
 print('P_1/P_0=',P_1/P_01)
 print('T_1/T_0=',T_1/T_01)
 print('P_1 =',P_1)
 print('T_1 =',T_1)
+print('u_1 =',u_1)
 print('\n')
 
 # Station 2
@@ -96,13 +100,23 @@ T_04 = T_03
 M_4 = fsolve(lambda m: exit_flow._p_ratio_mach(m) - P_04 / P_4, 3)
 T_4 = T_04 / exit_flow._T_ratio_mach(M_4)
 A_4_A_star = exit_flow._area_ratio_mach(M_4)
+u_4 = M_4 * exhaust.speed_of_sound(T_4)
 
 print('Station 4')
 print('M_4 = ',M_4)
 print('P_4 = ',P_4)
 print('T_4 = ',T_4)
+print('u_4 = ',u_4)
 print('A_4_A_star = ',A_4_A_star)
 
+# Résumé
+isp = (u_4 - u_1) / g_0
+debit = THRUST / g_0 / isp
+
+print("Résumé")
+print("Ce ramjet idéale a une ISP de {:.0f} s.".format(isp[0]))
+print("Il faut donc un débit d'air de {:.2f} kg/s pour avoir une"
+      " poussée de {:.0f} kN".format(debit[0], THRUST * 1e-3))
 
 
 
