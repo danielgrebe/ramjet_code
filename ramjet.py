@@ -104,6 +104,7 @@ def design_point(M3=MACH_DEBUT_COMBUSTION, M4=MACH_FIN_COMBUSTION):
                 gamma=GAMMA_POST_COMBUSTION)
     M6 = exit['m']
     T6 = exit['tr'] * T04
+    A_Astar = exit['ars']
     C6 = np.sqrt(GAMMA_POST_COMBUSTION*R_combustion*T6)
     U6 = exit['urs'] * c_star
     U6 = C6 * M6
@@ -113,6 +114,7 @@ def design_point(M3=MACH_DEBUT_COMBUSTION, M4=MACH_FIN_COMBUSTION):
     # print(m_dot)
     A_star = m_dot / (c_star * rho_star)
     h_star = A_star / JET_WIDTH
+    A_exit = A_star * A_Astar
 
     # print([A_star, h_star])
 
@@ -146,11 +148,13 @@ def design_point(M3=MACH_DEBUT_COMBUSTION, M4=MACH_FIN_COMBUSTION):
     c2_star = np.sqrt(R_AIR * 1.4 * T2_star)
     A_throat_diff = m_dot / c2_star / rho2_star
     h_throat_diff = A_throat_diff / JET_WIDTH
-    return isp, h_star, h_throat_diff, h_chambre
+    return (isp, h_star, h_throat_diff, h_chambre, fuel_flow, fuel_ratio,
+        A_exit)
 
 def off_design_throat_fixe(altitude, 
                            mach, 
                            h_col,
+                           A_exit,
                            M3=MACH_DEBUT_COMBUSTION,
                            M4=MACH_FIN_COMBUSTION):
     # initial stagnation conditions
@@ -207,21 +211,23 @@ def off_design_throat_fixe(altitude,
     # print([c_star, rho_star])
 
     # Conditions à la sortie
-    P6 = atm_cond.pressure
-    P6_P04 = P6 / P04
-    exit = isentropic_solver('pressure', P6_P04, to_dict=True,
+    A_star = h_col * JET_WIDTH
+    A_Astar = A_exit / A_star
+    exit = isentropic_solver('crit_area_super', A_Astar, to_dict=True,
                 gamma=GAMMA_POST_COMBUSTION)
     M6 = exit['m']
     T6 = exit['tr'] * T04
+    P6 = exit['pr'] * P04
     C6 = np.sqrt(GAMMA_POST_COMBUSTION*R_combustion*T6)
     U6 = exit['urs'] * c_star
     U6 = C6 * M6
     # print([M6, U6, U1])
     
-    A_star = h_col * JET_WIDTH
+    P_atm = atm_cond.pressure
     m_dot = A_star * c_star * rho_star
     # print(m_dot)
-    thrust = (U6 - U1) * m_dot
+    print(P6 - P_atm)
+    thrust = (U6 - U1) * m_dot + A_exit * (P6 - P_atm)
 
     # print([A_star, h_star])
 
@@ -245,7 +251,7 @@ def off_design_throat_fixe(altitude,
     c2_star = np.sqrt(R_AIR * 1.4 * T2_star)
     A_throat_diff = m_dot / c2_star / rho2_star
     h_throat_diff = A_throat_diff / JET_WIDTH
-    print(A_throat_diff)
+    # print(A_throat_diff)
     # print(h_throat_diff)
     return thrust, isp, h_throat_diff, m_dot
 
@@ -255,7 +261,7 @@ def main():
     m4 = np.linspace(0.7, 0.9, 20)
     m3v, m4v = np.meshgrid(m3, m4)
     vfunc = np.vectorize(design_point)
-    isp, h_star, h_diff, h_chambre = vfunc(m3v, m4v)
+    isp, h_star, h_diff, h_chambre, *_ = vfunc(m3v, m4v)
 
     fig, (ax0, ax1) = plt.subplots(1,2,subplot_kw={"projection": "3d"})
     surf = ax0.plot_surface(m3v, m4v, isp, cmap=cm.coolwarm,
@@ -270,14 +276,15 @@ def main():
     ax1.set_ylabel('$M_4$')
     ax1.set_zlabel('hauteur du col (m)')
     print(design_point(0.3, 0.6))
-    _, h_col, _, _ = design_point()
+    _, h_col, _, _, _, _, A_exit = design_point()
 
     vfunc_off = np.vectorize(off_design_throat_fixe)
     alt = np.linspace(15000, 25000, 20)
     mach = np.linspace(2.5, 3.0, 20)
     altv, machv = np.meshgrid(alt, mach)
     
-    off_thrust, off_isp, off_h_diff, off_m_dot = vfunc_off(altv, machv, h_col)
+    off_thrust, off_isp, off_h_diff, off_m_dot = vfunc_off(altv, machv, h_col,
+                A_exit)
    
 
     fig1, ((ax2, ax3),(ax4, ax5)) = plt.subplots(2,2,subplot_kw={"projection": "3d"})
@@ -303,7 +310,9 @@ def main():
     ax5.set_xlabel('$Altitude (m)$')
     ax5.set_ylabel('$Mach$')
     ax5.set_zlabel('Débit massique (kg/s)')
-    print(off_design_throat_fixe(20000, 2.8, h_col))
+    print(off_design_throat_fixe(20000, 2.8, h_col, A_exit))
+    plt.figure()
+    plt.scatter(altv, off_thrust)
     plt.show()
 
 if __name__ == '__main__':
