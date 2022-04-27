@@ -2,14 +2,11 @@ import numpy as np
 import iso_1D as iso
 from ambiance import Atmosphere
 from scipy.optimize import fsolve
-import matplotlib.pyplot as plt
 
 GAMMA_COMBUSTION = 1.3  # Gamma des gaz de combustion
 MASSE_MOLAIRE_COMBUSTION = 27.6
 TEMP_COMBUSTION = 2400  # K
-#TEMP_COMBUSTION = np.linspace(1800,2800,1000)
-#MACH_COMBUSTION = 0.5
-MACH_COMBUSTION = np.linspace(0.1,0.9,1000)
+MACH_COMBUSTION = 0.5
 M_FIN_COMBUSTION = 0.85
 g_0 = 9.81  # N/kg
 THRUST = 10e3  # N
@@ -83,9 +80,9 @@ print('M_3 = ',M_3)
 
 # on calcul le ratio de section necessaire pour avoir un mach
 # fixe à la fin de combustion
-#M_3 = M_FIN_COMBUSTION
-#u_3 = M_3 * exhaust.speed_of_sound(T_3)
-#A_3_A_2 = u_2 * rho_2 / u_3 / rho_3
+M_3 = M_FIN_COMBUSTION
+u_3 = M_3 * exhaust.speed_of_sound(T_3)
+A_3_A_2 = u_2 * rho_2 / u_3 / rho_3
 P_03 = exit_flow._p_ratio_mach(M_3) * P_3
 T_03 = exit_flow._T_ratio_mach(M_3) * T_3
 
@@ -94,13 +91,13 @@ print('M_3 = ',M_3)
 print('P_3 = ',P_3)
 print('T_3 = ',T_3)
 print('rho_3 = ',rho_3)
-#print('A_3_A_2 = ',A_3_A_2)
+print('A_3_A_2 = ',A_3_A_2)
 
 # Station 4
 P_4 = P_1
 P_04 = P_03
 T_04 = T_03
-M_4 = np.array([fsolve(lambda m: exit_flow._p_ratio_mach(m) - p_04 / P_4, 3) for p_04 in P_04])[0]
+M_4 = fsolve(lambda m: exit_flow._p_ratio_mach(m) - P_04 / P_4, 3)
 T_4 = T_04 / exit_flow._T_ratio_mach(M_4)
 A_4_A_star = exit_flow._area_ratio_mach(M_4)
 u_4 = M_4 * exhaust.speed_of_sound(T_4)
@@ -122,19 +119,8 @@ print("Il faut donc un débit d'air de {:.2f} kg/s pour avoir une"
       " poussée de {:.0f} kN".format(debit[0], THRUST * 1e-3))
 
 
-#plt.plot(isp,TEMP_COMBUSTION)
-#plt.show()
 
 
-plt.plot(MACH_COMBUSTION,isp)
-plt.xlabel('Nombre de Mach de combustion')
-plt.ylabel('Isp')
-plt.grid()
-plt.grid
 
-plt.figure()
-plt.plot(MACH_COMBUSTION, M_3)
-plt.xlabel('Nombre de Mach de combustion')
-plt.ylabel('Nombre de Mach avant la tuyère')
-plt.grid()
-plt.show()
+
+
