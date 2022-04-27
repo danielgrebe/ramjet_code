@@ -71,7 +71,7 @@ def design_point(M3=MACH_DEBUT_COMBUSTION, M4=MACH_FIN_COMBUSTION):
     # M4 = MACH_FIN_COMBUSTION
     T03 = T01  # car adiabatique
     P03 = P02  # car isentropique apres diffuseur
-
+    
     # conditions after combustion
     rayleigh3 = rayleigh_solver('m', M3, to_dict=True, 
                     gamma=GAMMA_POST_COMBUSTION)
@@ -128,6 +128,16 @@ def design_point(M3=MACH_DEBUT_COMBUSTION, M4=MACH_FIN_COMBUSTION):
     isp = thrust / GRAVITY / fuel_flow
     # print(isp)
 
+    # Section chambre de combustion rho03 = rho02
+    rho03 = rho02
+    chambre_in = isentropic_solver('m', M3, to_dict=True)
+    rho3 = rho03 * chambre_in['dr']
+    T3 = T03 * chambre_in['tr']
+    c3 = np.sqrt(1.4 * R_AIR * T3)
+    A_chambre = m_dot / c3 / rho3
+    h_chambre = A_chambre / JET_WIDTH
+
+
     # hauteur diffuseur
     diff_throat = isentropic_solver('m', 1, to_dict=True, 
                     gamma=1.4)
@@ -136,7 +146,7 @@ def design_point(M3=MACH_DEBUT_COMBUSTION, M4=MACH_FIN_COMBUSTION):
     c2_star = np.sqrt(R_AIR * 1.4 * T2_star)
     A_throat_diff = m_dot / c2_star / rho2_star
     h_throat_diff = A_throat_diff / JET_WIDTH
-    return isp, h_star, h_throat_diff
+    return isp, h_star, h_throat_diff, h_chambre
 
 def off_design_throat_fixe(altitude, 
                            mach, 
@@ -245,7 +255,7 @@ def main():
     m4 = np.linspace(0.7, 0.9, 20)
     m3v, m4v = np.meshgrid(m3, m4)
     vfunc = np.vectorize(design_point)
-    isp, h_star, h_diff = vfunc(m3v, m4v)
+    isp, h_star, h_diff, h_chambre = vfunc(m3v, m4v)
 
     fig, (ax0, ax1) = plt.subplots(1,2,subplot_kw={"projection": "3d"})
     surf = ax0.plot_surface(m3v, m4v, isp, cmap=cm.coolwarm,
@@ -253,14 +263,14 @@ def main():
     ax0.set_xlabel('$M_3$')
     ax0.set_ylabel('$M_4$')
     ax0.set_zlabel('isp (s)')
-    surf = ax1.plot_surface(m3v, m4v, h_star, cmap=cm.coolwarm,
+    surf = ax1.plot_surface(m3v, m4v, h_chambre, cmap=cm.coolwarm,
                     linewidth=0)
-    ax1.set_zscale('log')
+    # ax1.set_zscale('log')
     ax1.set_xlabel('$M_3$')
     ax1.set_ylabel('$M_4$')
     ax1.set_zlabel('hauteur du col (m)')
     print(design_point(0.3, 0.6))
-    null, h_col, none = design_point()
+    _, h_col, _, _ = design_point()
 
     vfunc_off = np.vectorize(off_design_throat_fixe)
     alt = np.linspace(15000, 25000, 20)
