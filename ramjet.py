@@ -10,16 +10,16 @@ from matplotlib import cm
 MACH_FIRST_CHOC = 2.3
 SECOND_RAMP = 10  # degree
 MACH_DEBUT_COMBUSTION = 0.5
-MACH_FIN_COMBUSTION = 0.9
-GAMMA_POST_COMBUSTION = 1.37
-MOL_MASS_POST_COMBUSTION = 29.17
+MACH_FIN_COMBUSTION = 0.8
+GAMMA_POST_COMBUSTION = 1.32
+MOL_MASS_POST_COMBUSTION = 28.917
 GAS_CONSTANT = 8314.46261815324
 R_AIR = GAS_CONSTANT / 28.97
 DESIGN_THRUST = 10e3  # N
 JET_WIDTH = 0.7  # m
 C_p_gas = 1.006e3  # J/kgK
 GRAVITY = 9.81  # Kg/N
-FUEL_ENERGY = 43e6  # J/kg
+FUEL_ENERGY = 42.44e6  # J/kg
 
 
 def diffuser(mach):
@@ -71,6 +71,12 @@ def design_point(M3=MACH_DEBUT_COMBUSTION, M4=MACH_FIN_COMBUSTION):
     # M4 = MACH_FIN_COMBUSTION
     T03 = T01  # car adiabatique
     P03 = P02  # car isentropique apres diffuseur
+    start_comb = isentropic_solver('m', M3, to_dict=True)
+    T3 = T03 * start_comb['tr']
+    P3 = P03 * start_comb['pr']
+    print((T3, P3))
+    
+    
     
     # conditions after combustion
     rayleigh3 = rayleigh_solver('m', M3, to_dict=True, 
@@ -226,7 +232,7 @@ def off_design_throat_fixe(altitude,
     P_atm = atm_cond.pressure
     m_dot = A_star * c_star * rho_star
     # print(m_dot)
-    print(P6 - P_atm)
+    # print(P6 - P_atm)
     thrust = (U6 - U1) * m_dot + A_exit * (P6 - P_atm)
 
     # print([A_star, h_star])
@@ -253,7 +259,7 @@ def off_design_throat_fixe(altitude,
     h_throat_diff = A_throat_diff / JET_WIDTH
     # print(A_throat_diff)
     # print(h_throat_diff)
-    return thrust, isp, h_throat_diff, m_dot
+    return thrust, isp, h_throat_diff, m_dot, fuel_ratio
 
 def main():
     design_point()
@@ -283,7 +289,7 @@ def main():
     mach = np.linspace(2.5, 3.0, 20)
     altv, machv = np.meshgrid(alt, mach)
     
-    off_thrust, off_isp, off_h_diff, off_m_dot = vfunc_off(altv, machv, h_col,
+    off_thrust, off_isp, off_h_diff, off_m_dot, fuel_frac = vfunc_off(altv, machv, h_col,
                 A_exit)
    
 
@@ -299,11 +305,11 @@ def main():
     ax3.set_xlabel('$Altitude (m)$')
     ax3.set_ylabel('$Mach$')
     ax3.set_zlabel('Poussée (N)')
-    surf = ax4.plot_surface(altv, machv, off_h_diff, cmap=cm.coolwarm,
+    surf = ax4.plot_surface(altv, machv, fuel_frac, cmap=cm.coolwarm,
                     linewidth=0)
     ax4.set_xlabel('$Altitude (m)$')
     ax4.set_ylabel('$Mach$')
-    ax4.set_zlabel('Hauteur diffuseur (m)')
+    ax4.set_zlabel('Ratio carburant')
     surf = ax5.plot_surface(altv, machv, off_m_dot, cmap=cm.coolwarm,
                     linewidth=0)
     #ax3.set_zscale('log')
@@ -311,8 +317,8 @@ def main():
     ax5.set_ylabel('$Mach$')
     ax5.set_zlabel('Débit massique (kg/s)')
     print(off_design_throat_fixe(20000, 2.8, h_col, A_exit))
-    plt.figure()
-    plt.scatter(altv, off_thrust)
+    # plt.figure()
+    # plt.scatter(altv, off_thrust)
     plt.show()
 
 if __name__ == '__main__':
