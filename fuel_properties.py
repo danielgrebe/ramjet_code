@@ -37,8 +37,8 @@ OUTPUT_BASEBAME = "JP10_stoich"
 
 M3 = 0.3
 if M3 == 0.3:
-    INITIAL_TEMP = 546  # K
-    INITIAL_PRESSURE = 132724 # Pa
+    INITIAL_TEMP = 591  # K
+    INITIAL_PRESSURE = 334000 # Pa
 else:
     INITIAL_TEMP = 529  # K
     INITIAL_PRESSURE = 119098 # Pa
@@ -100,7 +100,7 @@ def main():
                                                                 frac_min=float(frac_min), frac_max=float(frac_max)))
 
     g = ct.Solution(REACTION_FILE)
-    g.TPX = INITIAL_TEMP, INITIAL_PRESSURE, {'C10H16': 1/4.7,
+    g.TPX = INITIAL_TEMP, INITIAL_PRESSURE, {'C10H16': 1/10.15,
                                        'O2': RATIO_STOCH,
                                        'N2': RATIO_STOCH * 3.76}
     sol = ct.SolutionArray(g, (1))

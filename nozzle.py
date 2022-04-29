@@ -10,7 +10,7 @@ from pygasflow.nozzles import (
 ht = 0.5
 n = 20
 Me = 2.72
-gamma = 1.32
+gamma = 1.35
 wall, characteristics, left_runn_chars, theta_w_max = min_length_supersonic_nozzle_moc(ht, n, Me, None, gamma)
 x, y, z = np.array([]), np.array([]), np.array([])
 for char in left_runn_chars:
@@ -36,11 +36,11 @@ plt.axis('equal')
 plt.tight_layout()
 
 # inlet radius of the convergent section
-Ri = 2.4
+Ri = 14.74
 # throat radius
-Rt = 0.5
+Rt = 14.61
 # exit (outlet) radius of the divergent section
-Re = 1.819
+Re = 53.15
 # junction radius between the convergent and divergent at the throat section. Used in the conical nozzle.
 Rj = 0.1
 # junction radius between the combustion chamber and the convergent
