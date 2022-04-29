@@ -64,7 +64,7 @@ def main():
     
     ax1.set_xlabel('Nombre de Mach à l\'entrée')
     ax1.set_ylabel('Rendement de pression totale', color='r')
-    ax2.set_ylabel('Angle de la première rampe', color='b')
+    ax2.set_ylabel('Angle de la première rampe (\\textdegree)', color='b')
 
     plt.show()
 

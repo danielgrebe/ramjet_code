@@ -11,8 +11,8 @@ MACH_FIRST_CHOC = 2.3
 SECOND_RAMP = 10  # degree
 MACH_DEBUT_COMBUSTION = 0.5
 MACH_FIN_COMBUSTION = 0.9
-GAMMA_POST_COMBUSTION = 1.32
-MOL_MASS_POST_COMBUSTION = 28.917
+GAMMA_POST_COMBUSTION = 1.35
+MOL_MASS_POST_COMBUSTION = 28.879
 GAS_CONSTANT = 8314.46261815324
 R_AIR = GAS_CONSTANT / 28.97
 DESIGN_THRUST = 10e3  # N
@@ -114,7 +114,7 @@ def design_point(M3=MACH_DEBUT_COMBUSTION, M4=MACH_FIN_COMBUSTION):
     C6 = np.sqrt(GAMMA_POST_COMBUSTION*R_combustion*T6)
     U6 = exit['urs'] * c_star
     U6 = C6 * M6
-    # print([M6, U6, U1])
+    print([M6, U6, U1])
     
     m_dot = DESIGN_THRUST / (U6 - U1)
     # print(m_dot)
@@ -154,6 +154,7 @@ def design_point(M3=MACH_DEBUT_COMBUSTION, M4=MACH_FIN_COMBUSTION):
     c2_star = np.sqrt(R_AIR * 1.4 * T2_star)
     A_throat_diff = m_dot / c2_star / rho2_star
     h_throat_diff = A_throat_diff / JET_WIDTH
+
     return (isp, h_star, h_throat_diff, h_chambre, fuel_flow, fuel_ratio,
         A_exit)
 
@@ -259,28 +260,52 @@ def off_design_throat_fixe(altitude,
     h_throat_diff = A_throat_diff / JET_WIDTH
     # print(A_throat_diff)
     # print(h_throat_diff)
-    return thrust, isp, h_throat_diff, m_dot, fuel_ratio
+
+    # rendement thermo
+    # Section chambre de combustion rho03 = rho02
+    rho03 = rho02
+    chambre_in = isentropic_solver('m', M3, to_dict=True)
+    rho3 = rho03 * chambre_in['dr']
+    T3 = T03 * chambre_in['tr']
+    P3 = P03 * chambre_in['pr']
+
+    chambre_out = isentropic_solver('m', M4, to_dict=True, 
+                    gamma=GAMMA_POST_COMBUSTION)
+    T4 = T04 * chambre_out['tr']
+    # print(T4)
+    w_in = C_p_gas * (T3 - T1)
+    w_out = C_p_gas * (T6 - T4)
+    w_net = w_in + w_out
+    efficiency = - w_net / q
+    efficiency = (U6 - U1) * thrust/ q / m_dot
+
+    return thrust, isp, h_throat_diff, m_dot, fuel_ratio, efficiency, T3, P3
 
 def main():
     m3 = np.linspace(0.1, 0.6, 20)
-    m4 = np.linspace(0.7, 0.9, 20)
+    m4 = np.linspace(0.7, 0.95, 20)
     m3v, m4v = np.meshgrid(m3, m4)
     vfunc = np.vectorize(design_point)
     isp, h_star, h_diff, h_chambre, *_ = vfunc(m3v, m4v)
+    isp_design, *_ = design_point()
 
-    fig, (ax0, ax1) = plt.subplots(1,2,subplot_kw={"projection": "3d"})
+    # fig, (ax0, ax1) = plt.subplots(1,2,subplot_kw={"projection": "3d"})
+    fig, ax0 = plt.subplots(1,1,subplot_kw={"projection": "3d",
+            "computed_zorder": "False"})
     surf = ax0.plot_surface(m3v, m4v, isp, cmap=cm.coolwarm,
                     linewidth=0)
+    point = ax0.scatter(MACH_DEBUT_COMBUSTION, MACH_FIN_COMBUSTION, isp_design,
+            s=100, marker="*", c='k')
+    #ax0.legend("Point de design choisi")
     ax0.set_xlabel('$M_3$')
     ax0.set_ylabel('$M_4$')
     ax0.set_zlabel('isp (s)')
-    surf = ax1.plot_surface(m3v, m4v, h_chambre, cmap=cm.coolwarm,
-                    linewidth=0)
-    # ax1.set_zscale('log')
-    ax1.set_xlabel('$M_3$')
-    ax1.set_ylabel('$M_4$')
-    ax1.set_zlabel('hauteur du col (m)')
-    print(design_point(0.3, 0.6))
+    # surf = ax1.plot_surface(m3v, m4v, h_chambre, cmap=cm.coolwarm,
+    #                 linewidth=0)
+    # # ax1.set_zscale('log')
+    # ax1.set_xlabel('$M_3$')
+    # ax1.set_ylabel('$M_4$')
+    # ax1.set_zlabel('hauteur du col (m)')
     _, h_col, _, _, _, _, A_exit = design_point()
     print("h_col: {:.3f}".format(h_col[0]))
 
@@ -289,11 +314,25 @@ def main():
     mach = np.linspace(2.5, 3.0, 20)
     altv, machv = np.meshgrid(alt, mach)
     
-    off_thrust, off_isp, off_h_diff, off_m_dot, fuel_frac = vfunc_off(altv, machv, h_col,
-                A_exit)
+    (off_thrust, off_isp, off_h_diff, off_m_dot, fuel_frac, efficiency, T_c,
+        P_c)  = vfunc_off(
+        altv, machv, h_col, A_exit)
+
+    print(min(fuel_frac.flatten()))
+    print(max(fuel_frac.flatten()))
+    print(min(T_c.flatten()))
+    print(max(T_c.flatten()))
+    print(min(P_c.flatten()))
+    print(max(P_c.flatten()))
    
 
-    fig1, ((ax2, ax3),(ax4, ax5)) = plt.subplots(2,2,subplot_kw={"projection": "3d"})
+    fig1, ax2 = plt.subplots(1,1,subplot_kw={"projection": "3d"})
+    fig2, ax3 = plt.subplots(1,1,subplot_kw={"projection": "3d"})
+    fig3, ax4 = plt.subplots(1,1,subplot_kw={"projection": "3d"})
+    fig4, ax5 = plt.subplots(1,1,subplot_kw={"projection": "3d"})
+    fig5, ax6 = plt.subplots(1,1,subplot_kw={"projection": "3d"})
+    fig6, ax7 = plt.subplots(1,1,subplot_kw={"projection": "3d"})
+    #fig1, ((ax2, ax3),(ax4, ax5)) = plt.subplots(2,2,subplot_kw={"projection": "3d"})
     surf = ax2.plot_surface(altv, machv, off_isp, cmap=cm.coolwarm,
                     linewidth=0)
     ax2.set_xlabel('$Altitude (m)$')
@@ -301,21 +340,29 @@ def main():
     ax2.set_zlabel('isp (s)')
     surf = ax3.plot_surface(altv, machv, off_thrust, cmap=cm.coolwarm,
                     linewidth=0)
-    #ax3.set_zscale('log')
     ax3.set_xlabel('$Altitude (m)$')
     ax3.set_ylabel('$Mach$')
-    ax3.set_zlabel('Poussée (N)')
-    surf = ax4.plot_surface(altv, machv, fuel_frac, cmap=cm.coolwarm,
+    ax3.set_zlabel('Poussée (kN)')
+    surf = ax4.plot_surface(altv, machv, efficiency, cmap=cm.coolwarm,
                     linewidth=0)
     ax4.set_xlabel('$Altitude (m)$')
     ax4.set_ylabel('$Mach$')
-    ax4.set_zlabel('Ratio carburant')
+    ax4.set_zlabel('$\eta_{th}$')
     surf = ax5.plot_surface(altv, machv, off_m_dot, cmap=cm.coolwarm,
                     linewidth=0)
-    #ax3.set_zscale('log')
     ax5.set_xlabel('$Altitude (m)$')
     ax5.set_ylabel('$Mach$')
-    ax5.set_zlabel('Débit massique (kg/s)')
+    ax5.set_zlabel('$\dot{m}$ (kg/s)')
+    surf = ax6.plot_surface(altv, machv, off_m_dot*fuel_frac, cmap=cm.coolwarm,
+                    linewidth=0)
+    ax6.set_xlabel('$Altitude (m)$')
+    ax6.set_ylabel('$Mach$')
+    ax6.set_zlabel('$\dot{m}_f$ (kg/s)')
+    surf = ax7.plot_surface(altv, machv, fuel_frac/0.066, cmap=cm.coolwarm,
+                    linewidth=0)
+    ax7.set_xlabel('$Altitude (m)$')
+    ax7.set_ylabel('$Mach$')
+    ax7.set_zlabel('$\Phi$')
     print(off_design_throat_fixe(20000, 2.8, h_col, A_exit))
     print(design_point())
     # plt.figure()
