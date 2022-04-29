@@ -36,11 +36,11 @@ plt.axis('equal')
 plt.tight_layout()
 
 # inlet radius of the convergent section
-Ri = 0.4
+Ri = 2.4
 # throat radius
-Rt = 0.2
+Rt = 0.5
 # exit (outlet) radius of the divergent section
-Re = 1.2
+Re = 1.819
 # junction radius between the convergent and divergent at the throat section. Used in the conical nozzle.
 Rj = 0.1
 # junction radius between the combustion chamber and the convergent
@@ -61,19 +61,19 @@ K = 0.7
 #top = CD_TOP_Nozzle(Ri, Re, Rt, R0, theta_c, 0.7, geom_type)
 
 # number of characteristics
-n = 15
+n = 20
 # specific heats ratio
-gamma = 1.4
+gamma = 1.32
 
 moc = CD_Min_Length_Nozzle(Ri, Re, Rt, Rj, R0, theta_c, n, gamma)
 
-plt.figure()
+#plt.figure()
 N = 1000
-x1, y1 = conical.build_geometry(N)
+#x1, y1 = conical.build_geometry(N)
 #x2, y2 = top.build_geometry(N)
 x3, y3 = moc.build_geometry(N)
 plt.figure()
-plt.plot(x1, y1, label="conical")
+#plt.plot(x1, y1, label="conical")
 #plt.plot(x2, y2, label="TOP: K = {}".format(top.Fractional_Length))
 plt.plot(x3, y3, label="MOC")
 plt.legend()
