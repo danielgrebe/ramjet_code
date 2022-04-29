@@ -10,13 +10,13 @@ from matplotlib import cm
 MACH_FIRST_CHOC = 2.3
 SECOND_RAMP = 10  # degree
 MACH_DEBUT_COMBUSTION = 0.5
-MACH_FIN_COMBUSTION = 0.8
+MACH_FIN_COMBUSTION = 0.9
 GAMMA_POST_COMBUSTION = 1.32
 MOL_MASS_POST_COMBUSTION = 28.917
 GAS_CONSTANT = 8314.46261815324
 R_AIR = GAS_CONSTANT / 28.97
 DESIGN_THRUST = 10e3  # N
-JET_WIDTH = 0.7  # m
+JET_WIDTH = 1.0  # m
 C_p_gas = 1.006e3  # J/kgK
 GRAVITY = 9.81  # Kg/N
 FUEL_ENERGY = 42.44e6  # J/kg
@@ -74,7 +74,7 @@ def design_point(M3=MACH_DEBUT_COMBUSTION, M4=MACH_FIN_COMBUSTION):
     start_comb = isentropic_solver('m', M3, to_dict=True)
     T3 = T03 * start_comb['tr']
     P3 = P03 * start_comb['pr']
-    print((T3, P3))
+    # print((T3, P3))
     
     
     
@@ -262,7 +262,6 @@ def off_design_throat_fixe(altitude,
     return thrust, isp, h_throat_diff, m_dot, fuel_ratio
 
 def main():
-    design_point()
     m3 = np.linspace(0.1, 0.6, 20)
     m4 = np.linspace(0.7, 0.9, 20)
     m3v, m4v = np.meshgrid(m3, m4)
@@ -283,6 +282,7 @@ def main():
     ax1.set_zlabel('hauteur du col (m)')
     print(design_point(0.3, 0.6))
     _, h_col, _, _, _, _, A_exit = design_point()
+    print("h_col: {:.3f}".format(h_col[0]))
 
     vfunc_off = np.vectorize(off_design_throat_fixe)
     alt = np.linspace(15000, 25000, 20)
@@ -317,6 +317,7 @@ def main():
     ax5.set_ylabel('$Mach$')
     ax5.set_zlabel('Débit massique (kg/s)')
     print(off_design_throat_fixe(20000, 2.8, h_col, A_exit))
+    print(design_point())
     # plt.figure()
     # plt.scatter(altv, off_thrust)
     plt.show()
